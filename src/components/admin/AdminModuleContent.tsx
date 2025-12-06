@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { ArrowLeft, Plus, Edit2, Trash2, ChevronDown, ChevronRight, FileText, Video, Save, X } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, ChevronDown, ChevronRight, FileText, Video } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../Input';
 import { motion, AnimatePresence } from 'framer-motion';

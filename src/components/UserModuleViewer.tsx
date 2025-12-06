@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, ChevronRight, ChevronDown, PlayCircle, FileText } from 'lucide-react';
 import { Button } from './Button';
+import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Lesson {
@@ -242,12 +243,25 @@ export const UserModuleViewer: React.FC<UserModuleViewerProps> = ({ module, onBa
                                 dangerouslySetInnerHTML={{ __html: activeLesson.content }}
                             />
                         )}
+
+                        {/* PWA Install Prompt for 'Comece Aqui' module */}
+                        {module.title === 'Comece Aqui' && (
+                           <PWAInstallPrompt />
+                        )}
                     </div>
                 </div>
             ) : (
-                <div className="hidden md:flex flex-col items-center justify-center h-full text-sacred-beige/30 p-8 text-center">
-                    <FileText size={48} className="mb-4 opacity-50" />
-                    <p className="text-lg">Selecione uma aula no menu para começar.</p>
+                <div className="flex flex-col items-center justify-center h-full text-sacred-beige/30 p-8 text-center">
+                    {module.title === 'Comece Aqui' ? (
+                        <div className="w-full max-w-2xl">
+                           <PWAInstallPrompt />
+                        </div>
+                    ) : (
+                        <>
+                           <FileText size={48} className="mb-4 opacity-50" />
+                           <p className="text-lg">Selecione uma aula no menu para começar.</p>
+                        </>
+                    )}
                 </div>
             )}
          </div>
