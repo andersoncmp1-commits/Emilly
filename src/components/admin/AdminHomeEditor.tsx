@@ -4,6 +4,47 @@ import { Button } from '../Button';
 import { Input } from '../Input';
 import { Plus, Edit2, Trash2, Image, Link as LinkIcon, Box, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  DndContext, 
+  closestCenter, 
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors, 
+  type DragEndEvent 
+} from '@dnd-kit/core';
+import { 
+  arrayMove, 
+  SortableContext, 
+  sortableKeyboardCoordinates, 
+  rectSortingStrategy, 
+  useSortable 
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+function SortableItemItem({ id, children }: { id: string, children: (attributes: any, listeners: any) => React.ReactNode }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    opacity: isDragging ? 0.8 : 1
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="h-full">
+      {children(attributes, listeners)}
+    </div>
+  );
+}
 
 interface HomeSection {
   id: string;
@@ -31,7 +72,7 @@ interface Module {
 
 interface AdminHomeEditorProps {
   onEditModuleContent?: (moduleId: string) => void;
-  onManageModules?: () => void;
+  onManageModules?: (sectionId?: string) => void;
   modules?: Module[];
 }
 
@@ -85,6 +126,72 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
         if (!propModules) setModules(modulesRes.data);
     }
     setLoading(false);
+    setLoading(false);
+  };
+
+  // --- DRAG AND DROP ---
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+        activationConstraint: {
+            distance: 8, // Require 8px movement to start drag, preventing accidental clicks
+        }
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const activeItem = items.find(i => i.id === active.id);
+    const overItem = items.find(i => i.id === over.id);
+
+    if (activeItem && overItem && activeItem.section_id === overItem.section_id) {
+      const sectionId = activeItem.section_id;
+      const sectionItems = items.filter(i => i.section_id === sectionId).sort((a, b) => a.position - b.position);
+      
+      const oldIndex = sectionItems.findIndex(i => i.id === active.id);
+      const newIndex = sectionItems.findIndex(i => i.id === over.id);
+
+      if (oldIndex !== newIndex) {
+        const newSectionItems = arrayMove(sectionItems, oldIndex, newIndex);
+        
+        // Update positions locally
+        const updatedItems = items.map(item => {
+            if (item.section_id === sectionId) {
+                const newItem = newSectionItems.find(i => i.id === item.id);
+                if (newItem) {
+                    const index = newSectionItems.indexOf(newItem);
+                    return { ...item, position: index };
+                }
+            }
+            return item;
+        });
+
+        setItems(updatedItems);
+
+        // Update DB
+        const updates = newSectionItems.map((item, index) => ({
+            id: item.id,
+            section_id: item.section_id,
+            title: item.title,
+            description: item.description,
+            image_url: item.image_url,
+            type: item.type,
+            target_id: item.target_id,
+            target_url: item.target_url,
+            position: index
+        }));
+
+        const { error } = await supabase.from('home_items').upsert(updates);
+        if (error) console.error('Error updating positions:', error);
+      }
+    }
   };
 
   // --- SECTION ACTIONS ---
@@ -169,10 +276,28 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
     setIsItemModalOpen(true);
   };
 
-  const handleDeleteItem = async (id: string) => {
-    if (!confirm('Excluir este item?')) return;
-    await supabase.from('home_items').delete().eq('id', id);
-    fetchData();
+  // Delete Confirmation State
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string | null }>({
+    isOpen: false,
+    id: null
+  });
+
+  const requestDeleteItem = (id: string) => {
+    console.log('Requesting delete for item:', id);
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const confirmDeleteItem = async () => {
+    if (!deleteConfirm.id) return;
+    
+    const { error } = await supabase.from('home_items').delete().eq('id', deleteConfirm.id);
+    if (error) {
+        console.error('Error deleting home item:', error);
+        alert('Erro ao excluir item: ' + error.message);
+    } else {
+        fetchData();
+    }
+    setDeleteConfirm({ isOpen: false, id: null });
   };
 
   const handleSaveItem = async (e: React.FormEvent) => {
@@ -199,103 +324,66 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
     fetchData();
   };
 
-  const handleOrganizeLayout = async () => {
-    if (!confirm('Isso irá criar as seções "Instruções", "Cursos" e "Doações" e organizar os módulos conforme solicitado. Deseja continuar?')) return;
-    setLoading(true);
 
-    try {
-        // 1. Ensure Sections
-        const sectionsToEnsure = ['Instruções', 'Cursos', 'Doações'];
-        const sectionMap = new Map<string, string>();
-
-        for (let i = 0; i < sectionsToEnsure.length; i++) {
-            const title = sectionsToEnsure[i];
-            // Fix: Check matches more carefully or create duplicate if titles match? 
-            // We assume unique titles for simplicity here, picking the first one found.
-            const { data: existing } = await supabase.from('home_sections').select('id').eq('title', title).maybeSingle();
-            
-            if (!existing) {
-                const { data: newSec } = await supabase.from('home_sections').insert([{ title, position: i }]).select('id').single();
-                if (newSec) sectionMap.set(title, newSec.id);
-            } else {
-                sectionMap.set(title, existing.id);
-            }
-        }
-
-        // 2. Find/Create Modules
-        const getModuleId = async (titlePart: string, exactTitle?: string, icon?: string, locked?: boolean) => {
-             const { data: existing } = await supabase.from('modules').select('id').ilike('title', `%${titlePart}%`).limit(1).maybeSingle();
-             if (existing) return existing.id;
-             
-             if (exactTitle) {
-                 const { data: newMod } = await supabase.from('modules').insert([{
-                    title: exactTitle,
-                    description: 'Gerado automaticamente',
-                    icon: icon || 'BookOpen',
-                    is_locked: locked || false,
-                    position: 999
-                 }]).select('id').single();
-                 return newMod?.id;
-             }
-             return null;
-        };
-
-        const modComece = await getModuleId('Comece Aqui');
-        const modPortar = await getModuleId('Como se portar');
-        const modSilencio = await getModuleId('Silêncio');
-        const modCursos = await getModuleId('Cursos (Em Breve)', 'Cursos (Em Breve)', 'Clock', true);
-        const modDoar = await getModuleId('Doar', 'Doar', 'Heart', false);
-
-        // 3. Insert Items
-        const addItem = async (secTitle: string, title: string, modId: string | null, pos: number) => {
-            const secId = sectionMap.get(secTitle);
-            if (!secId || !modId) return;
-            
-            // Remove existing item link to this module in this section to prevent duplicates
-            await supabase.from('home_items').delete().eq('section_id', secId).eq('target_id', modId);
-
-            await supabase.from('home_items').insert([{
-                section_id: secId,
-                title: title,
-                type: 'module',
-                target_id: modId,
-                position: pos,
-                image_url: '' // Optional: fetch from module if needed
-            }]);
-        };
-
-        if (modComece) await addItem('Instruções', 'Comece Aqui', modComece, 0);
-        if (modPortar) await addItem('Instruções', 'Como se portar na igreja', modPortar, 1);
-        if (modSilencio) await addItem('Instruções', 'Silêncio na missa e na igreja', modSilencio, 2);
-        
-        await addItem('Cursos', 'Cursos (Em Breve)', modCursos, 0);
-        await addItem('Doações', 'Doar', modDoar, 0);
-
-        alert('Layout organizado com sucesso!');
-        fetchData();
-
-    } catch (e) {
-        console.error(e);
-        alert('Erro ao organizar layout. Verifique o console.');
-    } finally {
-        setLoading(false);
-    }
-  };
 
   return (
     <div className="space-y-8">
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+          {deleteConfirm.isOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+               <motion.div
+                 initial={{ opacity: 0, scale: 0.95 }}
+                 animate={{ opacity: 1, scale: 1 }}
+                 exit={{ opacity: 0, scale: 0.95 }}
+                 className="bg-sacred-blue border border-sacred-gold/40 rounded-xl p-6 w-full max-w-sm shadow-2xl relative"
+               >
+                 <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4 border-2 border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                    <Trash2 size={32} className="text-red-400" />
+                 </div>
+                 
+                 <h3 className="text-xl font-serif text-sacred-white text-center mb-2">
+                   Excluir Item?
+                 </h3>
+                 
+                 <p className="text-center text-sacred-beige/80 mb-6">
+                   Tem certeza que deseja excluir este item da seção?
+                 </p>
+                 
+                 <div className="flex gap-3">
+                   <button 
+                     onClick={() => setDeleteConfirm({ isOpen: false, id: null })}
+                     className="flex-1 py-2.5 rounded-lg border border-sacred-gold/30 text-sacred-beige hover:bg-sacred-gold/10 transition-colors"
+                   >
+                     Cancelar
+                   </button>
+                   <button 
+                     onClick={confirmDeleteItem}
+                     className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg transition-colors"
+                   >
+                     Excluir
+                   </button>
+                 </div>
+               </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-serif text-sacred-white">Editor da Home</h3>
         <div className="flex gap-2">
-            <Button onClick={handleOrganizeLayout} variant="outline" className="gap-2 border-sacred-gold/30 text-sacred-gold">
-                <Box size={18} /> Organizar Layout
-            </Button>
             <Button onClick={handleAddSection} className="gap-2">
                 <Plus size={18} /> Nova Seção
             </Button>
         </div>
       </div>
 
+
+
+      <DndContext 
+        sensors={sensors} 
+        collisionDetection={closestCenter} 
+        onDragEnd={handleDragEnd}
+      >
       <div className="space-y-6">
         {loading ? (
             <div className="text-center py-10 text-sacred-beige/50">Carregando...</div>
@@ -329,7 +417,7 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
                         <div className="flex gap-2">
                             {onManageModules && (
                                 <button 
-                                  onClick={onManageModules}
+                                  onClick={() => onManageModules(section.id)}
                                   className="p-2 text-sacred-gold/70 hover:bg-sacred-gold/10 rounded flex items-center gap-2 text-xs border border-sacred-gold/20 mr-2"
                                   title="Gerenciar Módulos"
                                 >
@@ -347,41 +435,84 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {items.filter(i => i.section_id === section.id).map(item => (
-                            <div key={item.id} className="bg-sacred-blue/50 border border-sacred-gold/20 rounded-lg p-3 relative group">
-                                <div className="aspect-video w-full bg-black/20 rounded mb-2 overflow-hidden relative">
-                                    {item.image_url ? (
-                                        <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-sacred-gold/20">
-                                            <Image size={24} />
+                        <SortableContext 
+                            items={items.filter(i => i.section_id === section.id).sort((a, b) => a.position - b.position).map(i => i.id)} 
+                            strategy={rectSortingStrategy}
+                        >
+                            {items
+                                .filter(i => i.section_id === section.id)
+                                .sort((a, b) => a.position - b.position)
+                                .map(item => (
+                                <SortableItemItem key={item.id} id={item.id}>
+                                    {(attributes, listeners) => (
+                                    <div className="bg-sacred-blue/50 border border-sacred-gold/20 rounded-lg p-3 relative group h-full flex flex-col">
+                                        <div 
+                                            {...attributes} 
+                                            {...listeners}
+                                            className="aspect-video w-full bg-black/20 rounded mb-2 overflow-hidden relative cursor-grab active:cursor-grabbing outline-none"
+                                        >
+                                            {item.image_url ? (
+                                                <img src={item.image_url} alt={item.title} className="w-full h-full object-cover pointer-events-none" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-sacred-gold/20">
+                                                    <Image size={24} />
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2">
-                                        {item.type === 'module' && item.target_id && onEditModuleContent && (
+                                        
+                                        {/* Actions Overlay - Outside Drag Handle */}
+                                        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            {item.type === 'module' && item.target_id && onEditModuleContent && (
+                                                <button 
+                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        e.preventDefault();
+                                                        console.log('Edit content clicked');
+                                                        onEditModuleContent(item.target_id!);
+                                                    }}
+                                                    className="p-1.5 bg-blue-500/80 text-white rounded-full hover:bg-blue-600 shadow-lg"
+                                                    title="Editar Conteúdo"
+                                                >
+                                                    <Box size={14} />
+                                                </button>
+                                            )}
                                             <button 
-                                              onClick={() => onEditModuleContent(item.target_id!)}
-                                              className="p-2 bg-blue-500/20 text-blue-400 rounded-full hover:bg-blue-500/30"
-                                              title="Editar Conteúdo do Módulo"
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    console.log('Edit item clicked');
+                                                    handleEditItem(item);
+                                                }} 
+                                                className="p-1.5 bg-sacred-gold text-sacred-blue rounded-full hover:bg-white shadow-lg"
                                             >
-                                                <Box size={16} />
+                                                <Edit2 size={14} />
                                             </button>
-                                        )}
-                                        <button onClick={() => handleEditItem(item)} className="p-2 bg-sacred-gold/10 text-sacred-gold rounded-full hover:bg-sacred-gold/20">
-                                            <Edit2 size={16} />
-                                        </button>
-                                        <button onClick={() => handleDeleteItem(item.id)} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500/20">
-                                            <Trash2 size={16} />
-                                        </button>
+                                            <button 
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    console.log('Delete item clicked', item.id);
+                                                    requestDeleteItem(item.id);
+                                                }} 
+                                                className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 mb-1">
+                                            {item.type === 'module' ? <Box size={12} className="text-blue-400" /> : <LinkIcon size={12} className="text-green-400" />}
+                                            <p className="text-sacred-white text-sm font-medium truncate select-none" title={item.title}>{item.title}</p>
+                                        </div>
+                                        <p className="text-xs text-sacred-beige/50 truncate mt-auto select-none">{item.description || 'Sem descrição'}</p>
                                     </div>
-                                </div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    {item.type === 'module' ? <Box size={12} className="text-blue-400" /> : <LinkIcon size={12} className="text-green-400" />}
-                                    <p className="text-sacred-white text-sm font-medium truncate" title={item.title}>{item.title}</p>
-                                </div>
-                                <p className="text-xs text-sacred-beige/50 truncate">{item.description || 'Sem descrição'}</p>
-                            </div>
+                                    )}
+                                </SortableItemItem>
                         ))}
+                        </SortableContext>
                         <button 
                             onClick={() => handleAddItem(section.id)}
                             className="bg-transparent border border-dashed border-sacred-gold/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-sacred-beige/50 hover:text-sacred-gold hover:border-sacred-gold/50 transition-all min-h-[150px]"
@@ -394,6 +525,7 @@ export const AdminHomeEditor: React.FC<AdminHomeEditorProps> = ({ onEditModuleCo
             ))
         )}
       </div>
+      </DndContext>
 
       {/* SECTION MODAL */}
       <AnimatePresence>

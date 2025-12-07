@@ -7,6 +7,7 @@ import { Recovery } from './pages/Recovery';
 import { ResetPassword } from './pages/ResetPassword';
 import { Dashboard } from './pages/Dashboard';
 import { AdminPanel } from './pages/AdminPanel';
+import { Settings } from './pages/Settings';
 import { AnimatePresence } from 'framer-motion';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -62,6 +63,14 @@ function AnimatedRoutes() {
             <AdminRoute>
               <AdminPanel />
             </AdminRoute>
+          } 
+        />
+        <Route 
+          path="/settings" 
+          element={
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
           } 
         />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

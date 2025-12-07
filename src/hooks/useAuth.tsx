@@ -6,6 +6,9 @@ interface Profile {
   id: string;
   role: 'user' | 'admin';
   full_name: string;
+  nickname?: string;
+  avatar_url?: string;
+  phone?: string;
 }
 
 interface AuthContextType {

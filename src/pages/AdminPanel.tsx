@@ -79,7 +79,11 @@ export function AdminPanel() {
   });
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -89,19 +93,69 @@ export function AdminPanel() {
     const { active, over } = event;
     if (active.id !== over?.id && over) {
       setModules((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
-        const newItems = arrayMove(items, oldIndex, newIndex);
-        
         // Update positions in DB
-        const updates = newItems.map((item, index) => ({
-          id: item.id,
-          position: index
-        }));
-        updates.forEach(async (update) => {
-           await supabase.from('modules').update({ position: update.position }).eq('id', update.id);
-        });
-        return newItems;
+        if (activeHomeSectionId) {
+             // We are reordering home_items in a section
+             // 1. Get the current ordered list of modules displayed
+             const sectionHomeItems = homeItems.filter(hi => hi.section_id === activeHomeSectionId).sort((a,b) => a.position - b.position);
+             const currentModuleIds = sectionHomeItems.map(hi => hi.target_id);
+
+             // 2. Determine old and new index based on module IDs
+             const oldIndex = currentModuleIds.indexOf(active.id as string);
+             const newIndex = currentModuleIds.indexOf(over.id as string);
+
+             if (oldIndex !== -1 && newIndex !== -1) {
+                // 3. Move in the homeItems array
+                const newSectionHomeItems = arrayMove(sectionHomeItems, oldIndex, newIndex);
+
+                // 4. Update the main homeItems state
+                const updatedHomeItems = homeItems.map(hi => {
+                    const found = newSectionHomeItems.find(n => n.id === hi.id);
+                    if (found) {
+                        return { ...hi, position: newSectionHomeItems.indexOf(found) };
+                    }
+                    return hi;
+                });
+                setHomeItems(updatedHomeItems);
+
+                // 5. Persist to DB
+                // We only need to update the items that changed position
+                 const updates = newSectionHomeItems.map((item, index) => ({
+                    id: item.id,
+                    section_id: item.section_id,
+                    title: item.title,
+                    description: item.description,
+                    image_url: item.image_url,
+                    type: item.type,
+                    target_id: item.target_id,
+                    target_url: item.target_url,
+                    position: index
+                 }));
+                 supabase.from('home_items').upsert(updates).then(({ error }) => {
+                    if (error) console.error('Error reordering home items in modal:', error);
+                 });
+             }
+             // For the visual list in modal (which is derived from modules), we don't strictly update 'modules' state order
+             // because the modal list derivation logic will use 'homeItems' order.
+             // However, setModules is expectation of dnd-kit for optimistic UI if we were rendering 'modules'.
+             // Since we derive the view from 'homeItems', updating 'homeItems' above is crucial.
+             return items; // Return items unchanged to setModules because we handle state separately for homeItems
+
+        } else {
+             // Global module reordering
+             const oldIndex = items.findIndex((item) => item.id === active.id);
+             const newIndex = items.findIndex((item) => item.id === over.id);
+             const newItems = arrayMove(items, oldIndex, newIndex);
+
+             const updates = newItems.map((item, index) => ({
+               id: item.id,
+               position: index
+             }));
+             supabase.from('modules').upsert(updates).then(({ error }) => {
+               if (error) console.error('Error updating positions:', error);
+             });
+             return newItems;
+        }
       });
     }
   };
@@ -152,6 +206,10 @@ export function AdminPanel() {
     batch_size: 10,
     batch_interval: 300
   });
+
+  // Home Section & Home Items State (for section-specific module management)
+  const [activeHomeSectionId, setActiveHomeSectionId] = useState<string | null>(null);
+  const [homeItems, setHomeItems] = useState<any[]>([]);
 
   // Broadcast State
   const [broadcastModal, setBroadcastModal] = useState({
@@ -398,6 +456,11 @@ export function AdminPanel() {
       if (error) console.error('Error fetching modules:', error);
       else setModules(data || []);
     }
+    
+    // Always fetch home items for filtering modules by section
+    const { data: homeItemsData } = await supabase.from('home_items').select('*');
+    if (homeItemsData) setHomeItems(homeItemsData);
+
     if (activeTab === 'campaigns' || activeTab === 'dashboard') {
       const { data, error } = await supabase.from('campaigns').select('*').order('created_at', { ascending: false });
       if (error) console.error('Error fetching campaigns:', error);
@@ -534,11 +597,30 @@ export function AdminPanel() {
   };
 
   // --- Module Handlers ---
-  const handleDeleteModule = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este módulo?')) return;
+  const confirmDeleteModule = (id: string) => {
+    setDeleteConfirmation({ isOpen: true, id });
+  };
+
+  const executeDeleteModule = async () => {
+    if (!deleteConfirmation.id) return;
+    const id = deleteConfirmation.id;
+
+    console.log('Executing module deletion for id:', id);
+    
+    // 1. Delete associated home_items first (FK constraint)
+    const { error: fkError } = await supabase.from('home_items').delete().eq('target_id', id).eq('type', 'module');
+    if (fkError) console.error('Error removing home shortcuts for module:', fkError);
+
+    // 2. Delete the module
     const { error } = await supabase.from('modules').delete().eq('id', id);
-    if (error) alert('Erro ao excluir módulo');
-    else fetchData();
+    if (error) {
+        console.error('Error deleting module:', error);
+        showAlert('Erro', 'Erro ao excluir módulo: ' + error.message, 'error');
+    } else {
+        fetchData();
+        showAlert('Sucesso', 'Módulo excluído com sucesso!', 'success');
+    }
+    setDeleteConfirmation({ isOpen: false, id: null });
   };
 
   const handleEditModule = (module: Module) => {
@@ -580,8 +662,35 @@ export function AdminPanel() {
       const { error } = await supabase.from('modules').update(payload).eq('id', editingModule.id);
       if (error) alert('Erro ao atualizar módulo');
     } else {
-      const { error } = await supabase.from('modules').insert([payload]);
-      if (error) alert('Erro ao criar módulo');
+      const { data, error } = await supabase.from('modules').insert([payload]).select(); // Select to get ID
+      if (error) {
+        alert('Erro ao criar módulo');
+        console.error(error);
+      } else if (activeHomeSectionId && data && data[0]) {
+        // If created within a specific section context, link it immediately
+        const newModuleId = data[0].id;
+        // Determine position
+        const sectionItems = homeItems.filter(i => i.section_id === activeHomeSectionId);
+        // Find the minimum position to insert at the beginning, or default to 0
+        const minPos = sectionItems.length > 0 ? Math.min(...sectionItems.map(i => i.position)) : 0;
+        const nextPos = minPos - 1;
+        
+        const { error: linkError } = await supabase.from('home_items').insert([{
+           section_id: activeHomeSectionId,
+           type: 'module',
+           target_id: newModuleId,
+           position: nextPos,
+           title: payload.title, // Copy basic info
+           description: payload.description,
+           image_url: payload.image_url
+        }]);
+
+        if (linkError) console.error('Error linking new module to section:', linkError);
+        else {
+           // Refresh home items locally or trigger a fetch
+           // fetchData will be called below anyway
+        }
+      }
     }
     setIsModuleModalOpen(false);
     fetchData();
@@ -1070,15 +1179,13 @@ export function AdminPanel() {
                 />
               ) : (
                 <div className="space-y-4">
-                  <div className="flex justify-end px-1">
-                     <Button onClick={() => setIsModuleListOpen(true)} variant="outline" className="text-xs gap-2 border-sacred-gold/30 text-sacred-gold hover:bg-sacred-gold/10">
-                        <Plus size={14} />
-                        Criar/Gerenciar Módulos
-                     </Button>
-                  </div>
+
                   <AdminHomeEditor 
                     modules={modules}
-                    onManageModules={() => setIsModuleListOpen(true)}
+                    onManageModules={(sectionId) => {
+                       setActiveHomeSectionId(sectionId || null);
+                       setIsModuleListOpen(true);
+                    }}
                     onEditModuleContent={(moduleId) => {
                       const m = modules.find(mod => mod.id === moduleId);
                       if (m) setActiveModule(m);
@@ -1628,7 +1735,7 @@ export function AdminPanel() {
         {/* Module Modal */}
         <AnimatePresence>
           {isModuleModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -2321,6 +2428,47 @@ export function AdminPanel() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* Delete Confirmation Modal */}
+        <AnimatePresence>
+          {deleteConfirmation.isOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+               <motion.div
+                 initial={{ opacity: 0, scale: 0.95 }}
+                 animate={{ opacity: 1, scale: 1 }}
+                 exit={{ opacity: 0, scale: 0.95 }}
+                 className="bg-sacred-blue border border-sacred-gold/40 rounded-xl p-6 w-full max-w-sm shadow-2xl"
+               >
+                 <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4 border-2 border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                    <Trash2 size={32} className="text-red-400" />
+                 </div>
+                 
+                 <h3 className="text-xl font-serif text-sacred-white text-center mb-2">
+                   Excluir Módulo?
+                 </h3>
+                 
+                 <p className="text-center text-sacred-beige/80 mb-6">
+                   Você tem certeza que deseja excluir este módulo permanentemente? Isso removerá o módulo e seus atalhos da tela inicial.
+                 </p>
+                 
+                 <div className="flex gap-3">
+                   <button 
+                     onClick={() => setDeleteConfirmation({ isOpen: false, id: null })}
+                     className="flex-1 py-2.5 rounded-lg border border-sacred-gold/30 text-sacred-beige hover:bg-sacred-gold/10 transition-colors"
+                   >
+                     Cancelar
+                   </button>
+                   <button 
+                     onClick={executeDeleteModule}
+                     className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg transition-colors"
+                   >
+                     Excluir
+                   </button>
+                 </div>
+               </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
       {/* MODULE LIST MODAL */}
       <AnimatePresence>
@@ -2333,7 +2481,9 @@ export function AdminPanel() {
               className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-serif text-sacred-white">Gerenciar Módulos</h3>
+                <h3 className="text-xl font-serif text-sacred-white">
+                  {activeHomeSectionId ? 'Gerenciar Módulos da Seção' : 'Gerenciar Todos os Módulos'}
+                </h3>
                 <div className="flex gap-2">
                    <Button onClick={handleAddNewModule} className="gap-2 text-xs h-8">
                      <Plus size={14} />
@@ -2351,20 +2501,41 @@ export function AdminPanel() {
                     collisionDetection={closestCenter}
                     onDragEnd={handleDragEnd}
                   >
+
                     <SortableContext 
-                      items={modules.map(m => m.id)}
+                      items={(activeHomeSectionId 
+                        ? homeItems
+                            .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
+                            .sort((a,b) => a.position - b.position)
+                            .map(hi => hi.target_id!)
+                        : modules.map(m => m.id)
+                      )}
                       strategy={verticalListSortingStrategy}
                     >
                       <div className="grid gap-3">
-                        {modules.length === 0 ? (
-                            <p className="text-sacred-beige/50 text-center py-4">Nenhum módulo cadastrado</p>
+                        {(activeHomeSectionId 
+                            ? homeItems
+                                .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
+                                .sort((a,b) => a.position - b.position)
+                                .map(hi => modules.find(m => m.id === hi.target_id)).filter(Boolean) as Module[]
+                            : modules
+                        ).length === 0 ? (
+                            <p className="text-sacred-beige/50 text-center py-4">
+                                {activeHomeSectionId ? 'Nenhum módulo nesta seção.' : 'Nenhum módulo cadastrado'}
+                            </p>
                         ) : (
-                            modules.map((module) => (
+                            (activeHomeSectionId 
+                                ? homeItems
+                                    .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
+                                    .sort((a,b) => a.position - b.position)
+                                    .map(hi => modules.find(m => m.id === hi.target_id)).filter(Boolean) as Module[]
+                                : modules
+                            ).map((module) => (
                               <SortableModuleItem 
                                 key={module.id} 
                                 module={module} 
                                 onEdit={handleEditModule}
-                                onDelete={handleDeleteModule}
+                                onDelete={confirmDeleteModule}
                                 onManageContent={(m) => {
                                     setIsModuleListOpen(false);
                                     setActiveModule(m);

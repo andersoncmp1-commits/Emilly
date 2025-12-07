@@ -115,7 +115,12 @@ export const SortableModuleItem: React.FC<SortableModuleItemProps> = ({
       <div className="flex items-center gap-2">
          {/* Manage Content Button */}
          <button 
-          onClick={() => onManageContent(module)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+             e.stopPropagation();
+             e.preventDefault();
+             onManageContent(module);
+          }}
           className="p-2 text-sacred-gold hover:bg-sacred-gold/10 rounded transition-colors"
           title="Gerenciar Conteúdo"
         >
@@ -123,7 +128,12 @@ export const SortableModuleItem: React.FC<SortableModuleItemProps> = ({
         </button>
 
         <button 
-          onClick={() => onEdit(module)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onEdit(module);
+          }}
           className="p-2 text-sacred-beige hover:text-sacred-white hover:bg-sacred-white/5 rounded transition-colors"
           title="Editar Informações"
         >
@@ -131,7 +141,12 @@ export const SortableModuleItem: React.FC<SortableModuleItemProps> = ({
         </button>
         
         <button 
-          onClick={() => onDelete(module.id)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onDelete(module.id);
+          }}
           className="p-2 text-red-400 hover:bg-red-500/10 rounded transition-colors"
           title="Excluir Módulo"
         >

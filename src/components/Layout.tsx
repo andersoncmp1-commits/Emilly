@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { LogOut, User as UserIcon, Settings } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 interface LayoutProps {
@@ -9,7 +9,7 @@ interface LayoutProps {
 
 // Layout principal com Header e Background
 export function Layout({ children }: LayoutProps) {
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, profile } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -52,10 +52,22 @@ export function Layout({ children }: LayoutProps) {
 
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3 text-sacred-beige">
-              <div className="w-8 h-8 rounded-full bg-sacred-white/5 flex items-center justify-center">
-                <UserIcon size={16} />
-              </div>
-              <span className="font-medium hidden md:block">{user?.user_metadata?.name || user?.email || 'Visitante'}</span>
+              <Link to="/settings" className="flex items-center gap-3 hover:opacity-80 transition-opacity group">
+                 <div className="w-8 h-8 rounded-full bg-sacred-white/5 flex items-center justify-center overflow-hidden border border-sacred-gold/20 group-hover:border-sacred-gold/50 transition-colors">
+                    {profile?.avatar_url ? (
+                      <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserIcon size={16} />
+                    )}
+                 </div>
+                 <span className="font-medium hidden md:block">
+                   {profile?.nickname || profile?.full_name || user?.user_metadata?.name || user?.email || 'Visitante'}
+                 </span>
+              </Link>
+              
+              <Link to="/settings" className="text-sacred-gold/70 hover:text-sacred-gold transition-colors" title="Configurações">
+                <Settings size={20} />
+              </Link>
             </div>
 
             {isAdmin && (
