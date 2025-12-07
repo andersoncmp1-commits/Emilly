@@ -19,6 +19,8 @@ interface Section {
   id: string;
   module_id: string;
   title: string;
+  description?: string;
+  image_url?: string;
   position: number;
   lessons: Lesson[];
 }
@@ -36,11 +38,11 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
   // Editing States
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
-  const [sectionForm, setSectionForm] = useState({ title: '' });
+  const [sectionForm, setSectionForm] = useState({ title: '', description: '', image_url: '' });
 
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null); // For creating new lesson in a specific section
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const [lessonForm, setLessonForm] = useState({
     title: '',
     type: 'text' as 'text' | 'video',
@@ -107,13 +109,17 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
   // --- SECTION HANDLERS ---
   const handleAddSection = () => {
     setEditingSection(null);
-    setSectionForm({ title: '' });
+    setSectionForm({ title: '', description: '', image_url: '' });
     setIsSectionModalOpen(true);
   };
 
   const handleEditSection = (section: Section) => {
     setEditingSection(section);
-    setSectionForm({ title: section.title });
+    setSectionForm({ 
+        title: section.title,
+        description: section.description || '',
+        image_url: section.image_url || ''
+    });
     setIsSectionModalOpen(true);
   };
 
@@ -125,12 +131,18 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
 
   const handleSaveSection = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = {
+        title: sectionForm.title,
+        description: sectionForm.description,
+        image_url: sectionForm.image_url
+    };
+
     if (editingSection) {
-      await supabase.from('sections').update({ title: sectionForm.title }).eq('id', editingSection.id);
+      await supabase.from('sections').update(payload).eq('id', editingSection.id);
     } else {
       await supabase.from('sections').insert([{
         module_id: module.id,
-        title: sectionForm.title,
+        ...payload,
         position: sections.length + 1
       }]);
     }
@@ -201,7 +213,7 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
 
       <div className="flex justify-end mb-4">
         <Button onClick={handleAddSection} className="gap-2">
-          <Plus size={18} /> Nova Seção
+          <Plus size={18} /> Nova Seção (Módulo)
         </Button>
       </div>
 
@@ -215,39 +227,70 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
              </div>
         ) : (
              sections.map(section => (
-                <div key={section.id} className="bg-sacred-blue/30 border border-sacred-gold/10 rounded-xl overflow-hidden">
-                   {/* Section Header */}
-                   <div 
-                     className="bg-sacred-blue/50 p-4 flex items-center justify-between cursor-pointer hover:bg-sacred-blue/60 transition-colors"
-                     onClick={() => toggleSection(section.id)}
-                   >
-                      <div className="flex items-center gap-3">
-                         <div className="text-sacred-gold">
-                            {expandedSections.has(section.id) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                         </div>
-                         <h3 className="font-serif text-lg text-sacred-white">{section.title}</h3>
-                         <span className="text-xs text-sacred-beige/40">({section.lessons.length} aulas)</span>
-                      </div>
-                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                         <button onClick={() => handleEditSection(section)} className="p-2 text-sacred-beige hover:text-sacred-white hover:bg-white/5 rounded">
-                            <Edit2 size={16} />
-                         </button>
-                         <button onClick={() => handleDeleteSection(section.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded">
-                            <Trash2 size={16} />
-                         </button>
-                      </div>
+                <div key={section.id} className="bg-sacred-blue/30 border border-sacred-gold/10 rounded-xl overflow-hidden transition-colors hover:border-sacred-gold/30">
+                   {/* Section Header (Card Style) */}
+                   <div className="flex flex-col md:flex-row">
+                       <div className="w-full md:w-32 h-32 bg-black/40 shrink-0 relative group cursor-pointer" onClick={() => toggleSection(section.id)}>
+                            {section.image_url ? (
+                                <img src={section.image_url} alt={section.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-sacred-beige/20">
+                                    <FileText size={24} />
+                                </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                {expandedSections.has(section.id) ? <ChevronDown className="text-white" /> : <ChevronRight className="text-white" />}
+                            </div>
+                       </div>
+                       
+                       <div className="flex-1 p-4 flex flex-col justify-between">
+                           <div className="flex justify-between items-start gap-4">
+                                <div onClick={() => toggleSection(section.id)} className="cursor-pointer flex-1">
+                                    <h3 className="font-serif text-lg text-sacred-white flex items-center gap-2">
+                                        {section.title}
+                                        <span className="text-xs font-sans text-sacred-beige/40 font-normal border border-sacred-gold/10 px-2 py-0.5 rounded-full">
+                                            {section.lessons.length} aulas
+                                        </span>
+                                    </h3>
+                                    {section.description && (
+                                        <p className="text-sm text-sacred-beige/60 mt-1 line-clamp-2">{section.description}</p>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => handleEditSection(section)} className="p-2 text-sacred-gold hover:bg-sacred-gold/10 rounded-full transition-colors" title="Editar">
+                                        <Edit2 size={16} />
+                                    </button>
+                                    <button onClick={() => handleDeleteSection(section.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-full transition-colors" title="Excluir">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                           </div>
+                           
+                           <div className="mt-2 flex items-center gap-2">
+                                <Button 
+                                    variant="outline" 
+                                    className="text-xs h-8 px-3 border-sacred-gold/20 hover:border-sacred-gold/40 text-sacred-beige hover:text-sacred-gold"
+                                    onClick={() => toggleSection(section.id)}
+                                >
+                                    {expandedSections.has(section.id) ? 'Ocultar Aulas' : 'Ver Aulas'}
+                                </Button>
+                           </div>
+                       </div>
                    </div>
 
-                   {/* Lessons List */}
+                   {/* Lessons List - Collapsible */}
                    <AnimatePresence>
                      {expandedSections.has(section.id) && (
                        <motion.div 
                          initial={{ height: 0, opacity: 0 }}
                          animate={{ height: 'auto', opacity: 1 }}
                          exit={{ height: 0, opacity: 0 }}
-                         className="overflow-hidden"
+                         className="overflow-hidden border-t border-sacred-gold/5 bg-black/20"
                        >
-                         <div className="p-4 space-y-2 bg-black/10">
+                         <div className="p-4 space-y-2">
+                            {section.lessons.length === 0 && (
+                                <p className="text-center text-xs text-sacred-beige/30 py-4 italic">Nenhuma aula nesta seção.</p>
+                            )}
                             {section.lessons.map(lesson => (
                                <div key={lesson.id} className="flex items-center justify-between p-3 bg-sacred-blue/40 border border-sacred-gold/5 rounded hover:border-sacred-gold/20 transition-all group">
                                   <div className="flex items-center gap-3">
@@ -272,9 +315,9 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
                                </div>
                             ))}
                             <Button 
-                              variant="ghost" 
-                              className="w-full mt-2 text-sm text-sacred-gold hover:text-sacred-gold/80 hover:bg-sacred-gold/5 border border-dashed border-sacred-gold/20"
-                              onClick={() => handleAddLesson(section.id)}
+                               variant="ghost" 
+                               className="w-full mt-2 text-sm text-sacred-gold hover:text-sacred-gold/80 hover:bg-sacred-gold/5 border border-dashed border-sacred-gold/20"
+                               onClick={() => handleAddLesson(section.id)}
                             >
                                <Plus size={14} className="mr-2" /> Adicionar Aula
                             </Button>
@@ -298,16 +341,45 @@ export const AdminModuleContent: React.FC<AdminModuleContentProps> = ({ module, 
                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-md shadow-2xl"
             >
                <h3 className="text-xl font-serif text-sacred-white mb-4">
-                  {editingSection ? 'Editar Seção' : 'Nova Seção'}
+                  {editingSection ? 'Editar Seção' : 'Nova Seção (Módulo Interno)'}
                </h3>
                <form onSubmit={handleSaveSection} className="space-y-4">
                  <Input 
-                    label="Título da Seção"
+                    label="Título"
                     value={sectionForm.title}
                     onChange={e => setSectionForm({...sectionForm, title: e.target.value})}
-                    placeholder="Ex: Introdução"
+                    placeholder="Ex: Módulo 1: Introdução"
                     required
                  />
+                 
+                 <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-sacred-beige/80 ml-1">Descrição</label>
+                    <textarea 
+                      className="w-full px-4 py-2 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white placeholder:text-sacred-beige/30 focus:outline-none focus:border-sacred-gold min-h-[80px]"
+                      value={sectionForm.description}
+                      onChange={e => setSectionForm({...sectionForm, description: e.target.value})}
+                      placeholder="Breve descrição do conteúdo..."
+                    />
+                 </div>
+
+                 <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-sacred-beige/80 ml-1">Capa (URL)</label>
+                    <div className="flex gap-4">
+                        <div className="flex-1">
+                            <Input 
+                                value={sectionForm.image_url}
+                                onChange={e => setSectionForm({...sectionForm, image_url: e.target.value})}
+                                placeholder="https://..."
+                            />
+                        </div>
+                        {sectionForm.image_url && (
+                            <div className="w-16 h-16 shrink-0 bg-sacred-blue/80 rounded overflow-hidden border border-sacred-gold/10">
+                                <img src={sectionForm.image_url} alt="Preview" className="w-full h-full object-cover" />
+                            </div>
+                        )}
+                    </div>
+                 </div>
+
                  <div className="flex justify-end gap-3 pt-2">
                     <Button type="button" variant="outline" onClick={() => setIsSectionModalOpen(false)}>Cancelar</Button>
                     <Button type="submit">Salvar</Button>

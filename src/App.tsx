@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { Login } from './pages/Login';
+import { MagicLinkLogin } from './pages/MagicLinkLogin';
 import { Register } from './pages/Register';
 import { Recovery } from './pages/Recovery';
 import { ResetPassword } from './pages/ResetPassword';
@@ -46,6 +47,7 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/login" element={<Login />} />
+        <Route path="/magic-link" element={<MagicLinkLogin />} />
         <Route path="/register" element={<Register />} />
         <Route path="/recovery" element={<Recovery />} />
         <Route path="/reset-password" element={<ResetPassword />} />

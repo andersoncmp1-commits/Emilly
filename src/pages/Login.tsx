@@ -89,6 +89,25 @@ export function Login() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
           </Button>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-sacred-gold/20"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-sacred-blue px-2 text-sacred-beige/40">Ou</span>
+            </div>
+          </div>
+
+          <Button 
+            type="button" 
+            variant="outline" 
+            className="w-full border-sacred-gold/50 text-sacred-gold hover:bg-sacred-gold/10"
+            onClick={() => navigate('/magic-link')}
+            disabled={loading}
+          >
+            LOGIN SEM SENHA
+          </Button>
         </form>
 
         <div className="mt-8 text-center text-sm text-sacred-beige/60">
