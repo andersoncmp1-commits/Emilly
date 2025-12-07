@@ -11,6 +11,7 @@
 /* Custom scrollbar for a more premium feel */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px; /* For horizontal scrollbars */
 }
 
 ::-webkit-scrollbar-track {
@@ -24,4 +25,14 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #A88540;
+}
+
+/* Utilities */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }

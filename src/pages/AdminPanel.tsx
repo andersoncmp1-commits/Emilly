@@ -10,6 +10,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableModuleItem, type Module } from '../components/admin/SortableModuleItem';
 import { AdminModuleContent } from '../components/admin/AdminModuleContent';
+import { AdminHomeEditor } from '../components/admin/AdminHomeEditor';
 
 interface Profile {
   id: string;
@@ -56,16 +57,17 @@ interface Transaction {
 }
 
 export function AdminPanel() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'modules' | 'users' | 'campaigns' | 'financial' | 'whatsapp'>('financial');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'home' | 'modules' | 'users' | 'campaigns' | 'financial' | 'whatsapp'>('financial');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Module State
   const [editingModule, setEditingModule] = useState<Module | null>(null);
   const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
+  const [isModuleListOpen, setIsModuleListOpen] = useState(false);
   const [moduleFormData, setModuleFormData] = useState<Partial<Module>>({
     title: '',
     description: '',
@@ -771,7 +773,7 @@ export function AdminPanel() {
                     : 'text-sacred-beige/60 hover:text-sacred-beige'
                 }`}
               >
-                Módulos
+                Home / Módulos
                 {activeTab === 'modules' && (
                   <motion.div 
                     layoutId="activeTab"
@@ -1059,7 +1061,7 @@ export function AdminPanel() {
               </div>
             )}
 
-            {/* MODULES TAB */}
+            {/* MODULES / HOME EDITOR TAB */}
             {activeTab === 'modules' && (
               activeModule ? (
                 <AdminModuleContent 
@@ -1068,34 +1070,23 @@ export function AdminPanel() {
                 />
               ) : (
                 <div className="space-y-4">
-                  <div className="flex justify-end">
-                    <Button onClick={handleAddNewModule}>
-                      <Plus size={20} />
-                      Novo Módulo
-                    </Button>
+                  <div className="flex justify-end px-1">
+                     <Button onClick={() => setIsModuleListOpen(true)} variant="outline" className="text-xs gap-2 border-sacred-gold/30 text-sacred-gold hover:bg-sacred-gold/10">
+                        <Plus size={14} />
+                        Criar/Gerenciar Módulos
+                     </Button>
                   </div>
-                  <DndContext 
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext 
-                      items={modules.map(m => m.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="grid gap-4">
-                        {modules.map((module) => (
-                          <SortableModuleItem 
-                            key={module.id} 
-                            module={module} 
-                            onEdit={handleEditModule}
-                            onDelete={handleDeleteModule}
-                            onManageContent={(m) => setActiveModule(m)}
-                          />
-                        ))}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
+                  <AdminHomeEditor 
+                    modules={modules}
+                    onManageModules={() => setIsModuleListOpen(true)}
+                    onEditModuleContent={(moduleId) => {
+                      const m = modules.find(mod => mod.id === moduleId);
+                      if (m) setActiveModule(m);
+                    }}
+                  />
+                  
+                  {/* Hidden DND Context to prevent errors if hooks are still running or if we want to restore legacy list below */}
+                  {/* Keeping legacy list hidden for safe keeping or just removing it entirely. Removing it is cleaner. */}
                 </div>
               )
             )}
@@ -1477,6 +1468,8 @@ export function AdminPanel() {
                 </div>
               </div>
             )}
+
+
 
             {/* USERS TAB (Base de Fiéis) */}
             {activeTab === 'users' && (
@@ -2329,6 +2322,65 @@ export function AdminPanel() {
           )}
         </AnimatePresence>
       </div>
+      {/* MODULE LIST MODAL */}
+      <AnimatePresence>
+        {isModuleListOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-serif text-sacred-white">Gerenciar Módulos</h3>
+                <div className="flex gap-2">
+                   <Button onClick={handleAddNewModule} className="gap-2 text-xs h-8">
+                     <Plus size={14} />
+                     Novo Módulo
+                   </Button>
+                   <button onClick={() => setIsModuleListOpen(false)} className="text-sacred-beige/50 hover:text-sacred-gold">
+                     <X size={20} />
+                   </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                  <DndContext 
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext 
+                      items={modules.map(m => m.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="grid gap-3">
+                        {modules.length === 0 ? (
+                            <p className="text-sacred-beige/50 text-center py-4">Nenhum módulo cadastrado</p>
+                        ) : (
+                            modules.map((module) => (
+                              <SortableModuleItem 
+                                key={module.id} 
+                                module={module} 
+                                onEdit={handleEditModule}
+                                onDelete={handleDeleteModule}
+                                onManageContent={(m) => {
+                                    setIsModuleListOpen(false);
+                                    setActiveModule(m);
+                                }}
+                              />
+                            ))
+                        )}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
         {/* Mobile Bottom Navigation */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-sacred-blue/95 backdrop-blur-xl border-t border-sacred-gold/20 z-50 pb-safe">
             <div className="flex justify-between items-center px-4 py-3">

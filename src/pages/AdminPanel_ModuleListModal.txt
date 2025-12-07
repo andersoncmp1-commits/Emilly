@@ -1,0 +1,58 @@
+      {/* MODULE LIST MODAL */}
+      <AnimatePresence>
+        {isModuleListOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-serif text-sacred-white">Gerenciar Módulos</h3>
+                <div className="flex gap-2">
+                   <Button onClick={handleAddNewModule} className="gap-2 text-xs h-8">
+                     <Plus size={14} />
+                     Novo Módulo
+                   </Button>
+                   <button onClick={() => setIsModuleListOpen(false)} className="text-sacred-beige/50 hover:text-sacred-gold">
+                     <X size={20} />
+                   </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                  <DndContext 
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext 
+                      items={modules.map(m => m.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="grid gap-3">
+                        {modules.length === 0 ? (
+                            <p className="text-sacred-beige/50 text-center py-4">Nenhum módulo cadastrado</p>
+                        ) : (
+                            modules.map((module) => (
+                              <SortableModuleItem 
+                                key={module.id} 
+                                module={module} 
+                                onEdit={handleEditModule}
+                                onDelete={handleDeleteModule}
+                                onManageContent={(m) => {
+                                    setIsModuleListOpen(false);
+                                    setActiveModule(m);
+                                }}
+                              />
+                            ))
+                        )}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
