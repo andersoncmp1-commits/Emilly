@@ -25,12 +25,17 @@ export function MagicLinkLogin() {
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: {
-                emailRedirectTo: window.location.origin + '/dashboard',
+                emailRedirectTo: 'https://app.corredentora.com.br/dashboard',
             },
         });
 
         if (error) {
-            setError(error.message);
+            let message = error.message;
+            if (message.includes('For security purposes, you can only request this after')) {
+                const seconds = message.match(/\d+/)?.[0] || 'alguns';
+                message = `Por segurança, aguarde ${seconds} segundos antes de tentar novamente.`;
+            }
+            setError(message);
         } else {
             setSent(true);
         }
