@@ -22,14 +22,11 @@ export function MagicLinkLogin() {
     setLoading(true);
     setError(null);
     try {
-        const redirectUrl = 'https://app.corredentora.com.br/dashboard';
-        console.log('Enviando Magic Link para:', redirectUrl);
-        // alert('Debug: Enviando para ' + redirectUrl); // Descomente se precisar ver na tela
-
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: {
-                emailRedirectTo: redirectUrl,
+                // Forçamos a URL de produção para garantir que não haja erro de localhost
+                emailRedirectTo: 'https://app.corredentora.com.br/dashboard',
             },
         });
 
