@@ -9,7 +9,7 @@ interface LayoutProps {
 
 // Layout principal com Header e Background
 export function Layout({ children }: LayoutProps) {
-  const { user, signOut, isAdmin, profile } = useAuth();
+  const { user, signOut, isAdmin, profile, loading } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -60,8 +60,12 @@ export function Layout({ children }: LayoutProps) {
                       <UserIcon size={16} />
                     )}
                  </div>
-                 <span className="font-medium hidden md:block">
+                   <span className="font-medium hidden md:block">
                    {profile?.nickname || profile?.full_name || user?.user_metadata?.name || user?.email || 'Visitante'}
+                   {/* DEBUG INFO */}
+                   <span className="ml-2 text-xs text-red-400 bg-red-900/20 px-1 rounded">
+                     {loading ? '...' : (profile?.role || 'no-role')}
+                   </span>
                  </span>
               </Link>
               
