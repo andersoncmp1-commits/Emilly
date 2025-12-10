@@ -53,12 +53,12 @@ export function ResetPassword() {
     >
       <div className="absolute inset-0 opacity-5 pointer-events-none" 
            style={{ 
-             backgroundImage: 'radial-gradient(circle at 2px 2px, #D4AF37 1px, transparent 0)',
+             backgroundImage: 'radial-gradient(circle at 2px 2px, rgb(var(--color-sacred-gold)) 1px, transparent 0)',
              backgroundSize: '40px 40px' 
            }} 
       />
 
-      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-[0_0_40px_rgba(0,0,0,0.5)] relative z-10">
+      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-2xl shadow-black/50 relative z-10">
         <div className="text-center mb-8">
           <h2 className="font-serif text-3xl text-sacred-white mb-2">Nova Senha</h2>
           <p className="text-sacred-beige/70 text-sm">Digite sua nova senha abaixo</p>

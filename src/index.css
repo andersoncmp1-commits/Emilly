@@ -2,37 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Default Sacred Theme Colors - RGB format for Tailwind opacity support */
+  --color-sacred-blue: 15 12 11;
+  --color-sacred-gold: 197 160 89;
+  --color-sacred-beige: 230 220 195;
+  --color-sacred-white: 250 249 246;
+  --color-sacred-gray: 44 36 32;
+}
+
 @layer base {
   body {
     @apply bg-sacred-blue text-sacred-white;
   }
 }
 
-/* Custom scrollbar for a more premium feel */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
-  height: 8px; /* For horizontal scrollbars */
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0F0C0B;
+  background: rgb(var(--color-sacred-blue));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #C5A059;
+  background: rgb(var(--color-sacred-gold));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #A88540;
+  background: rgb(var(--color-sacred-gold));
+  opacity: 0.8;
 }
 
-/* Utilities */
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }
 
 .scrollbar-hide {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }

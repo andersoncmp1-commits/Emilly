@@ -57,12 +57,12 @@ export function MagicLinkLogin() {
       {/* Background Decorativo */}
       <div className="absolute inset-0 opacity-5 pointer-events-none" 
            style={{ 
-             backgroundImage: 'radial-gradient(circle at 2px 2px, #D4AF37 1px, transparent 0)',
+             backgroundImage: 'radial-gradient(circle at 2px 2px, rgb(var(--color-sacred-gold)) 1px, transparent 0)',
              backgroundSize: '40px 40px' 
            }} 
       />
 
-      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-[0_0_40px_rgba(0,0,0,0.5)] relative z-10 text-center">
+      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-2xl shadow-black/50 relative z-10 text-center">
         {!sent ? (
              <>
                 <div className="flex justify-start mb-4">

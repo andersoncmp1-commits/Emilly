@@ -4,11 +4,12 @@ import { supabase } from '../lib/supabase';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { User, Shield, Camera, Save, ArrowLeft, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { User, Shield, Camera, Save, ArrowLeft, Loader2, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 export function Settings() {
-  const { user, profile } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -32,6 +33,11 @@ export function Settings() {
       setAvatarUrl(profile.avatar_url || null);
     }
   }, [profile]);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   const handleUpdateProfile = async () => {
     try {
@@ -268,6 +274,35 @@ export function Settings() {
                         Atualizar Senha
                     </Button>
                 </div>
+            </div>
+        </div>
+
+        {/* Logout Section */}
+        <div className="bg-sacred-blue/40 backdrop-blur-md border border-red-500/20 rounded-xl p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <LogOut size={20} className="text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-serif text-sacred-white">Sair da Conta</h2>
+                <p className="text-sacred-beige/60 text-sm">Encerrar sessão no dispositivo atual</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg border border-red-500/10">
+              <div>
+                <p className="text-sacred-beige text-sm">
+                  Você está logado como <span className="text-sacred-white font-medium">{user?.email}</span>
+                </p>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={handleLogout}
+                className="border-red-500/50 text-red-400 hover:bg-red-500/10 hover:border-red-500"
+              >
+                <LogOut size={18} className="mr-2" />
+                Sair
+              </Button>
             </div>
         </div>
 

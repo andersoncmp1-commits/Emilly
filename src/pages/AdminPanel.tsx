@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Share2, Send, Wallet, Clock, Smartphone, AlertCircle, RefreshCw, Play, PauseCircle, LayoutDashboard, BookOpen, Megaphone } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Share2, Send, Wallet, Clock, Smartphone, AlertCircle, RefreshCw, Play, PauseCircle, LayoutDashboard, BookOpen, Megaphone, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uazapi } from '../lib/uazapi';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -11,6 +11,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { SortableModuleItem, type Module } from '../components/admin/SortableModuleItem';
 import { AdminModuleContent } from '../components/admin/AdminModuleContent';
 import { AdminHomeEditor } from '../components/admin/AdminHomeEditor';
+import { AdminDesignSettings } from '../components/admin/AdminDesignSettings';
 
 interface Profile {
   id: string;
@@ -57,7 +58,8 @@ interface Transaction {
 }
 
 export function AdminPanel() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'home' | 'modules' | 'users' | 'campaigns' | 'financial' | 'whatsapp'>('financial');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'home' | 'modules' | 'users' | 'campaigns' | 'financial' | 'whatsapp' | 'design'>('financial');
+// ...
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
@@ -870,7 +872,7 @@ export function AdminPanel() {
                 {activeTab === 'dashboard' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -886,7 +888,7 @@ export function AdminPanel() {
                 {activeTab === 'modules' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -902,7 +904,7 @@ export function AdminPanel() {
                 {activeTab === 'users' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -918,7 +920,7 @@ export function AdminPanel() {
                 {activeTab === 'campaigns' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -934,7 +936,7 @@ export function AdminPanel() {
                 {activeTab === 'whatsapp' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -950,7 +952,23 @@ export function AdminPanel() {
                 {activeTab === 'financial' && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
+                  />
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('design')}
+                className={`pb-3 text-sm font-medium transition-all relative ${
+                  activeTab === 'design' 
+                    ? 'text-sacred-gold text-base' 
+                    : 'text-sacred-beige/60 hover:text-sacred-beige'
+                }`}
+              >
+                Design
+                {activeTab === 'design' && (
+                  <motion.div 
+                    layoutId="activeTab"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
                   />
                 )}
               </button>
@@ -1576,7 +1594,10 @@ export function AdminPanel() {
               </div>
             )}
 
-
+            {/* DESIGN TAB */}
+            {activeTab === 'design' && (
+              <AdminDesignSettings />
+            )}
 
             {/* USERS TAB (Base de Fiéis) */}
             {activeTab === 'users' && (
@@ -2596,6 +2617,13 @@ export function AdminPanel() {
                 >
                     <DollarSign size={20} strokeWidth={activeTab === 'financial' ? 2.5 : 2} />
                     <span className="text-[10px] font-medium">Finan</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('design')}
+                  className={`flex flex-col items-center gap-1 ${activeTab === 'design' ? 'text-sacred-gold' : 'text-sacred-beige/50'}`}
+                >
+                    <Palette size={20} strokeWidth={activeTab === 'design' ? 2.5 : 2} />
+                    <span className="text-[10px] font-medium">Design</span>
                 </button>
             </div>
         </div>

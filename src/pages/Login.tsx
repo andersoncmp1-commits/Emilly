@@ -38,17 +38,22 @@ export function Login() {
       className="min-h-screen flex items-center justify-center bg-sacred-blue relative overflow-hidden p-4"
     >
       {/* Background decorativo */}
-      <div className="absolute inset-0 opacity-5 pointer-events-none" 
-           style={{ 
-             backgroundImage: 'radial-gradient(circle at 2px 2px, #D4AF37 1px, transparent 0)',
-             backgroundSize: '40px 40px' 
-           }} 
+      <div 
+        className="absolute inset-0 opacity-5 pointer-events-none" 
+        style={{ 
+          backgroundImage: 'radial-gradient(circle at 2px 2px, rgb(var(--color-sacred-gold)) 1px, transparent 0)',
+          backgroundSize: '40px 40px' 
+        }} 
       />
 
-      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-[0_0_40px_rgba(0,0,0,0.5)] relative z-10">
+      <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-2xl shadow-black/50 relative z-10">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-sacred-gold/10 border border-sacred-gold flex items-center justify-center">
-            <span className="text-sacred-gold font-serif text-3xl">A</span>
+          <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <img 
+              src="https://i.imgur.com/3vqvsBH.png" 
+              alt="Logo" 
+              className="w-full h-full object-contain"
+            />
           </div>
           <h2 className="font-serif text-3xl text-sacred-white mb-2">Bem-vindo</h2>
           <p className="text-sacred-beige/80 text-sm">Acesse sua área de membros</p>

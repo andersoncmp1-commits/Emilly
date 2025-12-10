@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { Login } from './pages/Login';
 import { MagicLinkLogin } from './pages/MagicLinkLogin';
 import { Register } from './pages/Register';
@@ -83,11 +84,13 @@ function AnimatedRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AnimatedRoutes />
-      </Router>
-    </AuthProvider>
+    <SettingsProvider>
+      <AuthProvider>
+        <Router>
+          <AnimatedRoutes />
+        </Router>
+      </AuthProvider>
+    </SettingsProvider>
   );
 }
 
