@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Wallet, Clock, RefreshCw, Play, PauseCircle, Settings2, AlertCircle, LayoutDashboard, Megaphone, Smartphone, Palette } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Wallet, Clock, RefreshCw, Play, PauseCircle, Settings2, AlertCircle, LayoutDashboard, Megaphone, Smartphone, Palette, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uazapi } from '../lib/uazapi';
 import { AdminDesignSettings } from '../components/admin/AdminDesignSettings';
@@ -52,6 +52,13 @@ interface Transaction {
   amount: number;
   type: 'credit' | 'debit';
   status: 'pending' | 'completed' | 'processing';
+  created_at: string;
+}
+
+interface MessageTemplate {
+  id: string;
+  title: string;
+  content: string;
   created_at: string;
 }
 
@@ -140,6 +147,12 @@ export function AdminPanel() {
     target_audience: 'all' as 'all' | 'payment_status_ok' | 'payment_status_late' | 'specific',
     specific_user_ids: [] as string[]
   });
+
+  // Message Templates State
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
+  const [templateFormData, setTemplateFormData] = useState({ title: '', content: '' });
 
   // Home Section & Home Items State (for section-specific module management)
 
@@ -288,6 +301,41 @@ export function AdminPanel() {
     }
   };
 
+  const fetchTemplates = async () => {
+    const { data } = await supabase.from('message_templates').select('*').order('created_at', { ascending: false });
+    setTemplates(data || []);
+  };
+
+  const handleOpenTemplates = () => {
+    fetchTemplates();
+    setIsTemplateModalOpen(true);
+    setEditingTemplate(null);
+    setTemplateFormData({ title: '', content: '' });
+  };
+
+  const handleSaveTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingTemplate) {
+      await supabase.from('message_templates').update(templateFormData).eq('id', editingTemplate.id);
+    } else {
+      await supabase.from('message_templates').insert([templateFormData]);
+    }
+    setEditingTemplate(null);
+    setTemplateFormData({ title: '', content: '' });
+    fetchTemplates();
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm('Excluir este modelo?')) return;
+    await supabase.from('message_templates').delete().eq('id', id);
+    fetchTemplates();
+  };
+
+  const handleEditTemplate = (template: MessageTemplate) => {
+    setEditingTemplate(template);
+    setTemplateFormData({ title: template.title, content: template.content });
+  };
+
 
 
   const fetchData = async () => {
@@ -308,6 +356,9 @@ export function AdminPanel() {
         .order('created_at', { ascending: false });
       if (error) console.error('Error fetching campaigns:', error);
       else setCampaigns(data || []);
+      
+      // Also fetch templates when on campaigns tab
+      fetchTemplates();
     }
     if (activeTab === 'financial' || activeTab === 'dashboard') {
       const { data, error } = await supabase.from('financial_transactions').select('*').order('created_at', { ascending: false });
@@ -924,6 +975,10 @@ export function AdminPanel() {
                        <RefreshCw size={16} />
                        Monitorar Envios
                     </Button>
+                    <Button variant="outline" onClick={handleOpenTemplates} className="gap-2 justify-center w-full sm:w-auto">
+                       <FileText size={16} />
+                       Modelos
+                    </Button>
                     <Button onClick={handleAddNewCampaign} className="gap-2 justify-center w-full sm:w-auto">
                       <Plus size={20} />
                       Novo Disparo
@@ -1426,7 +1481,81 @@ export function AdminPanel() {
         {/* Module Modal */}
 
 
-        {/* User Modal */}
+        {/* Templates Modal */}
+        <AnimatePresence>
+          {isTemplateModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl w-full max-w-lg shadow-2xl p-6 overflow-y-auto max-h-[90vh]"
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-serif text-sacred-white">
+                    Modelos de Mensagem
+                  </h3>
+                  <button onClick={() => setIsTemplateModalOpen(false)} className="text-sacred-beige/60 hover:text-sacred-gold">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                {/* Form */}
+                <form onSubmit={handleSaveTemplate} className="space-y-4 mb-8 bg-sacred-blue/30 p-4 rounded-lg border border-sacred-gold/10">
+                   <h4 className="text-sm font-medium text-sacred-gold mb-2">{editingTemplate ? 'Editar Modelo' : 'Novo Modelo'}</h4>
+                   <Input 
+                      placeholder="Título do Modelo (ex: Boas vindas)" 
+                      value={templateFormData.title} 
+                      onChange={e => setTemplateFormData({...templateFormData, title: e.target.value})}
+                      required
+                   />
+                   <textarea
+                        className="w-full h-24 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md p-3 text-sacred-white focus:outline-none focus:border-sacred-gold/50 resize-none font-sans text-sm"
+                        placeholder="Conteúdo da mensagem..."
+                        value={templateFormData.content}
+                        onChange={e => setTemplateFormData({...templateFormData, content: e.target.value})}
+                        required
+                     />
+                    <div className="flex justify-end gap-2">
+                       {editingTemplate && (
+                         <Button type="button" variant="outline" className="text-xs h-8" onClick={() => {
+                           setEditingTemplate(null);
+                           setTemplateFormData({ title: '', content: '' });
+                         }}>Cancelar</Button>
+                       )}
+                       <Button type="submit" className="text-xs h-8">Salvar Modelo</Button>
+                    </div>
+                </form>
+
+                {/* List */}
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                   {templates.length === 0 ? (
+                      <p className="text-center text-sacred-beige/40 text-sm py-4">Nenhum modelo cadastrado.</p>
+                   ) : (
+                      templates.map(t => (
+                        <div key={t.id} className="bg-sacred-blue/40 border border-sacred-gold/10 rounded-lg p-3 group hover:border-sacred-gold/30 transition-all">
+                           <div className="flex justify-between items-start mb-2">
+                              <h5 className="font-medium text-sacred-white text-sm">{t.title}</h5>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <button onClick={() => handleEditTemplate(t)} className="p-1 hover:text-sacred-gold text-sacred-beige/60">
+                                    <Edit2 size={12} />
+                                 </button>
+                                 <button onClick={() => handleDeleteTemplate(t.id)} className="p-1 hover:text-red-400 text-sacred-beige/60">
+                                    <Trash2 size={12} />
+                                 </button>
+                              </div>
+                           </div>
+                           <p className="text-xs text-sacred-beige/60 line-clamp-2 italic">{t.content}</p>
+                        </div>
+                      ))
+                   )}
+                </div>
+
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
           {isUserModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -1556,7 +1685,29 @@ export function AdminPanel() {
                   />
 
                   <div className="space-y-1">
-                     <label className="text-sm font-medium text-sacred-beige/80">Mensagem</label>
+                     <div className="flex justify-between items-center">
+                        <label className="text-sm font-medium text-sacred-beige/80">Mensagem</label>
+                        {templates.length > 0 && (
+                          <div className="flex items-center gap-2">
+                             <span className="text-xs text-sacred-beige/50">Carregar Modelo:</span>
+                             <select
+                                className="bg-neutral-900 border border-sacred-gold/40 rounded px-2 py-1 text-xs text-white placeholder-gray-400 focus:outline-none focus:border-sacred-gold cursor-pointer"
+                                onChange={(e) => {
+                                   if (e.target.value) {
+                                      const t = templates.find(t => t.id === e.target.value);
+                                      if (t) setMessageForm(prev => ({ ...prev, content: t.content }));
+                                      e.target.value = ""; // Reset select
+                                   }
+                                }}
+                             >
+                                <option value="">Selecionar...</option>
+                                {templates.map(t => (
+                                   <option key={t.id} value={t.id}>{t.title}</option>
+                                ))}
+                             </select>
+                          </div>
+                        )}
+                     </div>
                      <textarea
                         className="w-full h-32 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md p-3 text-sacred-white focus:outline-none focus:border-sacred-gold/50 resize-none font-sans"
                         placeholder="Digite a mensagem que será enviada..."
@@ -1743,7 +1894,7 @@ export function AdminPanel() {
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="font-serif text-2xl text-sacred-white flex items-center gap-2">
                     <RefreshCw size={24} className="text-sacred-gold" />
-                    Monitor de Disparos em Massa (Uazapi)
+                    Monitor de Disparos em Massa
                   </h3>
                   <div className="flex gap-2">
                     <button onClick={fetchUazapiCampaigns} className="p-2 hover:bg-sacred-gold/10 rounded-full text-sacred-gold" title="Atualizar">
