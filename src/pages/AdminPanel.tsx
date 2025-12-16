@@ -1111,11 +1111,7 @@ export function AdminPanel() {
                       </div>
                       <p className="text-2xl font-serif text-sacred-white">R$ 31.827,96</p>
                     </div>
-                    <div className="mt-4 flex justify-end">
-                      <Button className="text-xs py-1.5 px-3 h-auto">
-                        Solicitar saque
-                      </Button>
-                    </div>
+
                   </div>
                 </div>
 
