@@ -1,5 +1,4 @@
-import { useState, useEffect, createContext, useContext, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { useState, createContext, useContext, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface Profile {
@@ -23,53 +22,46 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // --- MOCK DATA FOR "NO-LOGIN" MODE ---
+  const MOCK_USER: User = {
+    id: 'mock-admin-id',
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: 'admin@emilly.com',
+    email_confirmed_at: new Date().toISOString(),
+    phone: '',
+    confirmation_sent_at: '',
+    confirmed_at: new Date().toISOString(),
+    last_sign_in_at: new Date().toISOString(),
+    app_metadata: {
+      provider: 'email',
+      providers: ['email'],
+    },
+    user_metadata: {
+      full_name: 'Admin User',
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    identities: [],
+  };
 
-  useEffect(() => {
-    const fetchProfile = async (userId: string) => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      
-      if (error) {
-        console.error('Error fetching profile:', error);
-      }
-      setProfile(data);
-    };
+  const MOCK_PROFILE: Profile = {
+    id: 'mock-admin-id',
+    role: 'admin',
+    full_name: 'Admin User',
+    nickname: 'Admin'
+  };
+  // -------------------------------------
 
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    // Listen for changes on auth state (logged in, signed out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  // We are bypassing login, so these states are static mock data
+  const [user] = useState<User | null>(MOCK_USER);
+  const [session] = useState<Session | null>(null);
+  const [profile] = useState<Profile | null>(MOCK_PROFILE);
+  const loading = false;
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setProfile(null);
+    console.log('Mock sign out - doing nothing or arguably could reload');
+    window.location.reload(); 
   };
 
   return (
@@ -79,9 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile, 
       loading, 
       signOut,
-      isAdmin: profile?.role === 'admin' 
+      isAdmin: true // Always admin
     }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

@@ -3,14 +3,9 @@ import { supabase } from '../lib/supabase';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Share2, Send, Wallet, Clock, Smartphone, AlertCircle, RefreshCw, Play, PauseCircle, LayoutDashboard, BookOpen, Megaphone, Palette } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Users, Shield, Search, ChevronLeft, ChevronRight, Upload, Calendar, DollarSign, QrCode, Wallet, Clock, RefreshCw, Play, PauseCircle, Settings2, AlertCircle, LayoutDashboard, Megaphone, Smartphone, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uazapi } from '../lib/uazapi';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { SortableModuleItem, type Module } from '../components/admin/SortableModuleItem';
-import { AdminModuleContent } from '../components/admin/AdminModuleContent';
-import { AdminHomeEditor } from '../components/admin/AdminHomeEditor';
 import { AdminDesignSettings } from '../components/admin/AdminDesignSettings';
 
 interface Profile {
@@ -27,9 +22,10 @@ interface Profile {
 interface Campaign {
   id: string;
   title: string;
-  current_amount: number;
-  goal_amount: number;
-  status: 'active' | 'ended';
+  current_amount?: number;
+  goal_amount?: number;
+  status: 'active' | 'ended'; // active = Running/Scheduled, ended = Paused/Completed
+  campaign_messages?: ScheduledMessage[];
 }
 
 interface ScheduledMessage {
@@ -46,6 +42,8 @@ interface ScheduledMessage {
   batch_size?: number;
   batch_interval?: number;
   campaigns?: Campaign;
+  target_audience?: 'all' | 'payment_status_ok' | 'payment_status_late' | 'specific';
+  specific_user_ids?: string[];
 }
 
 interface Transaction {
@@ -57,113 +55,51 @@ interface Transaction {
   created_at: string;
 }
 
+const parseDateBr = (dateStr: string) => {
+  // Expected format: dd/mm/yyyy hh:mm
+  // Remove non numeric chars to check length or just split
+  const clean = dateStr.replace(/[^0-9]/g, '');
+  if (clean.length < 8) return null; // at least ddmmyyyy
+
+  const parts = dateStr.split(' ');
+  const datePart = parts[0];
+  const timePart = parts[1] || '00:00';
+
+  const [day, month, year] = datePart.split('/');
+  const [hour, minute] = timePart.split(':');
+
+  if (!day || !month || !year) return null;
+
+  // Reformat to ISO: YYYY-MM-DDTHH:mm:00
+  const iso = `${year}-${month}-${day}T${hour || '00'}:${minute || '00'}:00`;
+  const date = new Date(iso);
+  return isNaN(date.getTime()) ? null : date;
+};
+
+const formatDateBr = (isoStr: string) => {
+  if (!isoStr) return '';
+  const date = new Date(isoStr);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+};
+
 export function AdminPanel() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'home' | 'modules' | 'users' | 'campaigns' | 'financial' | 'whatsapp' | 'design'>('financial');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'campaigns' | 'financial' | 'whatsapp' | 'design'>('financial');
 // ...
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [modules, setModules] = useState<Module[]>([]);
+
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Module State
-  const [editingModule, setEditingModule] = useState<Module | null>(null);
-  const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
-  const [isModuleListOpen, setIsModuleListOpen] = useState(false);
-  const [moduleFormData, setModuleFormData] = useState<Partial<Module>>({
-    title: '',
-    description: '',
-    icon: 'BookOpen',
-    position: 0,
-    image_url: '',
-    release_date: '',
-    is_locked: false
-  });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (active.id !== over?.id && over) {
-      setModules((items) => {
-        // Update positions in DB
-        if (activeHomeSectionId) {
-             // We are reordering home_items in a section
-             // 1. Get the current ordered list of modules displayed
-             const sectionHomeItems = homeItems.filter(hi => hi.section_id === activeHomeSectionId).sort((a,b) => a.position - b.position);
-             const currentModuleIds = sectionHomeItems.map(hi => hi.target_id);
-
-             // 2. Determine old and new index based on module IDs
-             const oldIndex = currentModuleIds.indexOf(active.id as string);
-             const newIndex = currentModuleIds.indexOf(over.id as string);
-
-             if (oldIndex !== -1 && newIndex !== -1) {
-                // 3. Move in the homeItems array
-                const newSectionHomeItems = arrayMove(sectionHomeItems, oldIndex, newIndex);
-
-                // 4. Update the main homeItems state
-                const updatedHomeItems = homeItems.map(hi => {
-                    const found = newSectionHomeItems.find(n => n.id === hi.id);
-                    if (found) {
-                        return { ...hi, position: newSectionHomeItems.indexOf(found) };
-                    }
-                    return hi;
-                });
-                setHomeItems(updatedHomeItems);
-
-                // 5. Persist to DB
-                // We only need to update the items that changed position
-                 const updates = newSectionHomeItems.map((item, index) => ({
-                    id: item.id,
-                    section_id: item.section_id,
-                    title: item.title,
-                    description: item.description,
-                    image_url: item.image_url,
-                    type: item.type,
-                    target_id: item.target_id,
-                    target_url: item.target_url,
-                    position: index
-                 }));
-                 supabase.from('home_items').upsert(updates).then(({ error }) => {
-                    if (error) console.error('Error reordering home items in modal:', error);
-                 });
-             }
-             // For the visual list in modal (which is derived from modules), we don't strictly update 'modules' state order
-             // because the modal list derivation logic will use 'homeItems' order.
-             // However, setModules is expectation of dnd-kit for optimistic UI if we were rendering 'modules'.
-             // Since we derive the view from 'homeItems', updating 'homeItems' above is crucial.
-             return items; // Return items unchanged to setModules because we handle state separately for homeItems
-
-        } else {
-             // Global module reordering
-             const oldIndex = items.findIndex((item) => item.id === active.id);
-             const newIndex = items.findIndex((item) => item.id === over.id);
-             const newItems = arrayMove(items, oldIndex, newIndex);
-
-             const updates = newItems.map((item, index) => ({
-               id: item.id,
-               position: index
-             }));
-             supabase.from('modules').upsert(updates).then(({ error }) => {
-               if (error) console.error('Error updating positions:', error);
-             });
-             return newItems;
-        }
-      });
-    }
-  };
 
   // Module Content State
-  const [activeModule, setActiveModule] = useState<Module | null>(null);
+
 
   // User State
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
@@ -190,13 +126,7 @@ export function AdminPanel() {
     id: null
   });
 
-  // Scheduled Messages State
-  const [messageModal, setMessageModal] = useState({
-    isOpen: false,
-    campaign: null as Campaign | null,
-    messages: [] as ScheduledMessage[],
-    loading: false
-  });
+
   
   const [messageForm, setMessageForm] = useState({
     content: '',
@@ -206,22 +136,16 @@ export function AdminPanel() {
     min_delay: 30,
     max_delay: 120,
     batch_size: 10,
-    batch_interval: 300
+    batch_interval: 300,
+    target_audience: 'all' as 'all' | 'payment_status_ok' | 'payment_status_late' | 'specific',
+    specific_user_ids: [] as string[]
   });
 
   // Home Section & Home Items State (for section-specific module management)
-  const [activeHomeSectionId, setActiveHomeSectionId] = useState<string | null>(null);
-  const [homeItems, setHomeItems] = useState<any[]>([]);
 
-  // Broadcast State
-  const [broadcastModal, setBroadcastModal] = useState({
-    isOpen: false,
-    campaign: null as Campaign | null,
-    message: '',
-    isSending: false,
-    progress: 0,
-    total: 0
-  });
+
+
+
 
   // Uazapi Campaigns Monitor
   const [monitorModal, setMonitorModal] = useState(false);
@@ -235,17 +159,7 @@ export function AdminPanel() {
     name: ''
   });
 
-  // Custom Alert State
-  const [alertModal, setAlertModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'info' as 'info' | 'error' | 'success'
-  });
 
-  const showAlert = (title: string, message: string, type: 'info' | 'error' | 'success' = 'info') => {
-    setAlertModal({ isOpen: true, title, message, type });
-  };
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -264,21 +178,12 @@ export function AdminPanel() {
 
     for (const msg of messages) {
       const campaign = msg.campaigns;
-      if (!campaign) continue;
+      if (campaign.status !== 'active') continue; // Skip paused/ended campaigns
 
       let shouldSend = false;
 
       if (msg.trigger_type === 'date' && msg.scheduled_at) {
         if (new Date(msg.scheduled_at) <= new Date()) {
-          shouldSend = true;
-        }
-      } else if (msg.trigger_type === 'amount_reached') {
-        if (campaign.current_amount >= Number(msg.trigger_value)) {
-          shouldSend = true;
-        }
-      } else if (msg.trigger_type === 'amount_remaining') {
-        const remaining = campaign.goal_amount - campaign.current_amount;
-        if (remaining <= Number(msg.trigger_value)) {
           shouldSend = true;
         }
       }
@@ -290,7 +195,27 @@ export function AdminPanel() {
         await supabase.from('campaign_messages').update({ status: 'sent', processed_at: new Date().toISOString() }).eq('id', msg.id);
 
         // Fetch valid phones
-        const { data: profiles } = await supabase.from('profiles').select('phone').not('phone', 'is', null);
+        // Fetch valid phones based on target audience
+        let query = supabase.from('profiles').select('phone, id').not('phone', 'is', null);
+
+        if (msg.target_audience === 'payment_status_ok') {
+          query = query.eq('payment_status', 'Em dia');
+        } else if (msg.target_audience === 'payment_status_late') {
+          query = query.eq('payment_status', 'Em atraso');
+        } else if (msg.target_audience === 'specific' && msg.specific_user_ids && msg.specific_user_ids.length > 0) {
+          // Parse if it's stored as string representation of array or just use if it is array
+          let ids = msg.specific_user_ids;
+          if (typeof ids === 'string') {
+             try { ids = JSON.parse(ids); } catch (e) { ids = []; }
+          }
+           // Use 'in' filter for specific IDs. 
+           // Note: Supabase JS client expects an array for .in()
+           if (Array.isArray(ids)) {
+             query = query.in('id', ids);
+           }
+        }
+
+        const { data: profiles } = await query;
         const phones = profiles?.map(p => p.phone).filter(p => p && p.length > 8) as string[] || [];
 
         if (phones.length > 0) {
@@ -339,81 +264,7 @@ export function AdminPanel() {
   }, [activeTab]);
 
   // Message Handlers
-  const handleOpenMessageModal = async (campaign: Campaign) => {
-    try {
-      const status = await uazapi.getStatus();
-      
-      if (status.status !== 'connected') {
-          showAlert(
-            'WhatsApp Desconectado', 
-            'A instância do WhatsApp está desconectada. Por favor, vá até a aba "Conexão WhatsApp" e escaneie o QR Code para conectar.',
-            'error'
-          );
-          return;
-      }
-    } catch (e) {
-      console.error('Error in handleOpenMessageModal:', e);
-      showAlert('Erro', 'Erro ao verificar conexão. Veja o console.', 'error');
-      return;
-    }
 
-    setMessageModal(prev => ({ ...prev, isOpen: true, campaign, loading: true }));
-    const { data } = await supabase.from('campaign_messages').select('*').eq('campaign_id', campaign.id).order('created_at', { ascending: false });
-    setMessageModal(prev => ({ ...prev, messages: data || [], loading: false }));
-    setMessageForm({ 
-      content: '', 
-      trigger_type: 'date', 
-      trigger_value: '', 
-      scheduled_at: '',
-      min_delay: 30,
-      max_delay: 120,
-      batch_size: 10,
-      batch_interval: 300
-    });
-  };
-
-  const handleSaveMessage = async () => {
-    if (!messageModal.campaign) return;
-    
-    // Validation
-    if (!messageForm.content) return alert('Digite a mensagem');
-    if (messageForm.trigger_type === 'date' && !messageForm.scheduled_at) return alert('Selecione a data');
-    if (messageForm.trigger_type !== 'date' && !messageForm.trigger_value) return alert('Digite o valor');
-
-    const payload = {
-      campaign_id: messageModal.campaign.id,
-      message_content: messageForm.content,
-      trigger_type: messageForm.trigger_type,
-      trigger_value: messageForm.trigger_type === 'date' ? messageForm.scheduled_at : messageForm.trigger_value,
-      scheduled_at: messageForm.trigger_type === 'date' ? new Date(messageForm.scheduled_at).toISOString() : null,
-      min_delay: messageForm.min_delay,
-      max_delay: messageForm.max_delay,
-      batch_size: messageForm.batch_size,
-      batch_interval: messageForm.batch_interval,
-      status: 'pending'
-    };
-
-    const { error } = await supabase.from('campaign_messages').insert([payload]);
-    if (error) {
-      alert('Erro ao salvar agendamento');
-      console.error(error);
-    } else {
-      // Refresh list
-      const { data } = await supabase.from('campaign_messages').select('*').eq('campaign_id', messageModal.campaign.id).order('created_at', { ascending: false });
-      setMessageModal(prev => ({ ...prev, messages: data || [] }));
-      setMessageForm({ 
-        content: '', 
-        trigger_type: 'date', 
-        trigger_value: '', 
-        scheduled_at: '',
-        min_delay: 30,
-        max_delay: 120,
-        batch_size: 10,
-        batch_interval: 300
-      });
-      alert('Agendamento salvo!');
-    }
-  };
 
   // --- Uazapi Monitor Handlers ---
   const handleOpenMonitor = async () => {
@@ -437,14 +288,7 @@ export function AdminPanel() {
     }
   };
 
-  const handleDeleteMessage = async (id: string) => {
-    if(!confirm('Excluir agendamento?')) return;
-    await supabase.from('campaign_messages').delete().eq('id', id);
-    setMessageModal(prev => ({ 
-      ...prev, 
-      messages: prev.messages.filter(m => m.id !== id) 
-    }));
-  };
+
 
   const fetchData = async () => {
     setLoading(true);
@@ -453,22 +297,19 @@ export function AdminPanel() {
     if (usersError) console.error('Error fetching users:', usersError);
     else setUsers(usersData || []);
 
-    if (activeTab === 'modules') {
-      const { data, error } = await supabase.from('modules').select('*').order('position');
-      if (error) console.error('Error fetching modules:', error);
-      else setModules(data || []);
-    }
+
     
-    // Always fetch home items for filtering modules by section
-    const { data: homeItemsData } = await supabase.from('home_items').select('*');
-    if (homeItemsData) setHomeItems(homeItemsData);
+
 
     if (activeTab === 'campaigns' || activeTab === 'dashboard') {
-      const { data, error } = await supabase.from('campaigns').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*, campaign_messages(*)')
+        .order('created_at', { ascending: false });
       if (error) console.error('Error fetching campaigns:', error);
       else setCampaigns(data || []);
     }
-    if (activeTab === 'financial') {
+    if (activeTab === 'financial' || activeTab === 'dashboard') {
       const { data, error } = await supabase.from('financial_transactions').select('*').order('created_at', { ascending: false });
       if (error) console.error('Error fetching transactions:', error);
       else setTransactions(data || []);
@@ -492,15 +333,49 @@ export function AdminPanel() {
     setDeleteConfirmation({ isOpen: false, id: null });
   };
 
-  // --- Campaign Handlers ---
+  // --- Campaign (Now WhatsApp Blast) Handlers ---
   const handleEditCampaign = (campaign: Campaign) => {
+    // Determine edit mode - simplified to Title and Status mostly, messages edit separate or here?
+    // For now we assume "Edit" edits the container.
     setEditingCampaign(campaign);
     setCampaignFormData({
       title: campaign.title,
-      goal_amount: campaign.goal_amount,
-      current_amount: campaign.current_amount,
+      goal_amount: 0,
+      current_amount: 0,
       status: campaign.status
     });
+    
+    // Also load message into form if exists
+    const msg = campaign.campaign_messages?.[0];
+    if (msg) {
+        setMessageForm({
+            content: msg.message_content,
+            trigger_type: 'date',
+            trigger_value: '',
+            scheduled_at: msg.scheduled_at ? formatDateBr(msg.scheduled_at) : '',
+            min_delay: msg.min_delay || 30,
+            max_delay: msg.max_delay || 120,
+            batch_size: msg.batch_size || 10,
+            batch_interval: msg.batch_interval || 300,
+            target_audience: msg.target_audience || 'all',
+            specific_user_ids: msg.specific_user_ids || []
+        });
+    } else {
+        // Reset message form
+        setMessageForm({
+            content: '',
+            trigger_type: 'date',
+            trigger_value: '',
+            scheduled_at: '',
+            min_delay: 30,
+            max_delay: 120,
+            batch_size: 10,
+            batch_interval: 300,
+            target_audience: 'all',
+            specific_user_ids: []
+        });
+    }
+
     setIsCampaignModalOpen(true);
   };
 
@@ -512,191 +387,108 @@ export function AdminPanel() {
       current_amount: 0,
       status: 'active'
     });
+    // Reset message form
+    setMessageForm({
+        content: '',
+        trigger_type: 'date',
+        trigger_value: '',
+        scheduled_at: '',
+        min_delay: 30,
+        max_delay: 120,
+        batch_size: 10,
+        batch_interval: 300,
+        target_audience: 'all',
+        specific_user_ids: []
+    });
     setIsCampaignModalOpen(true);
   };
 
   const handleSubmitCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!messageForm.content) return alert('Digite a mensagem do disparo.');
+
+    if (!messageForm.scheduled_at) return alert('Defina a data e hora do disparo.');
+    
+    const parsedDate = parseDateBr(messageForm.scheduled_at);
+    if (!parsedDate) return alert('Data inválida. Use o formato dd/mm/yyyy hh:mm');
+    if (parsedDate <= new Date()) return alert('A data deve ser futura.');
+
+    let campaignId = editingCampaign?.id;
     let error;
+
+    // 1. Save/Update Campaign Container
     if (editingCampaign) {
-      const { error: updateError } = await supabase.from('campaigns').update(campaignFormData).eq('id', editingCampaign.id);
+      const { error: updateError } = await supabase.from('campaigns').update({
+        title: campaignFormData.title,
+        status: campaignFormData.status
+      }).eq('id', editingCampaign.id);
       error = updateError;
     } else {
-      const { error: insertError } = await supabase.from('campaigns').insert([campaignFormData]);
+      const { data: newCampaign, error: insertError } = await supabase.from('campaigns').insert([{
+        title: campaignFormData.title,
+        status: 'active',
+        goal_amount: 0, 
+        current_amount: 0
+      }]).select().single();
+      
+      if (newCampaign) campaignId = newCampaign.id;
       error = insertError;
     }
-    if (error) {
+
+    if (error || !campaignId) {
       console.error('Error saving campaign:', error);
-      alert('Erro ao salvar campanha');
+      return alert('Erro ao salvar campanha.');
+    }
+
+    // 2. Save/Update Linked Message (Assuming 1-to-1 for this simplified flow)
+    // If editing, try to find existing message.
+    let messageId = editingCampaign?.campaign_messages?.[0]?.id;
+
+    if (messageId) {
+        // Update existing
+        await supabase.from('campaign_messages').update({
+            message_content: messageForm.content,
+            scheduled_at: parsedDate.toISOString(),
+            status: 'pending',
+            min_delay: messageForm.min_delay,
+            max_delay: messageForm.max_delay,
+            batch_size: messageForm.batch_size,
+            batch_interval: messageForm.batch_interval,
+            target_audience: messageForm.target_audience,
+            specific_user_ids: messageForm.specific_user_ids
+        }).eq('id', messageId);
     } else {
-      setIsCampaignModalOpen(false);
-      fetchData();
-    }
-  };
-
-  // --- Broadcast Handlers ---
-  const handleOpenBroadcast = async (campaign: Campaign) => {
-    try {
-      const status = await uazapi.getStatus();
-      
-      if (status.status !== 'connected') {
-          showAlert(
-            'WhatsApp Desconectado', 
-            'A instância do WhatsApp está desconectada. Por favor, vá até a aba "Conexão WhatsApp" e escaneie o QR Code para conectar.',
-            'error'
-          );
-          return;
-      }
-    } catch (e) {
-      console.error('Error in handleOpenBroadcast:', e);
-      showAlert('Erro', 'Erro ao verificar conexão. Veja o console.', 'error');
-      return;
-    }
-
-    setBroadcastModal({
-      isOpen: true,
-      campaign,
-      message: `Olá! Participe da nossa campanha: ${campaign.title}. Contribua agora e ajude nossa comunidade!`,
-      isSending: false,
-      progress: 0,
-      total: 0
-    });
-  };
-
-  const handleSendBroadcast = async () => {
-    if (!broadcastModal.campaign) return;
-
-    // Check Connection BEFORE sending
-    try {
-      const status = await uazapi.getStatus();
-      if (status.status !== 'connected') {
-         showAlert(
-            'WhatsApp Desconectado', 
-            'A instância do WhatsApp está desconectada. Por favor, vá até a aba "Conexão WhatsApp" e escaneie o QR Code para conectar.',
-            'error'
-         );
-         return;
-      }
-    } catch (e) {
-      console.error('Error checking status in handleSendBroadcast:', e);
-      showAlert('Erro', 'Erro ao verificar status de conexão.', 'error');
-      return;
-    }
-
-    setBroadcastModal(prev => ({ ...prev, isSending: true }));
-    const phones = users.filter(u => u.phone && u.phone.length > 8).map(u => u.phone as string);
-    if (phones.length === 0) {
-      alert('Nenhum usuário com telefone cadastrado encontrado.');
-      setBroadcastModal(prev => ({ ...prev, isSending: false }));
-      return;
-    }
-    setBroadcastModal(prev => ({ ...prev, total: phones.length }));
-    const { successCount } = await uazapi.broadcast(phones, broadcastModal.message, (current, total) => {
-        setBroadcastModal(prev => ({ ...prev, progress: current, total }));
-    });
-    alert(`Mensagens enviadas!\nSucesso: ${successCount}\nTotal: ${phones.length}`);
-    setBroadcastModal(prev => ({ ...prev, isOpen: false, isSending: false }));
-  };
-
-  // --- Module Handlers ---
-  const confirmDeleteModule = (id: string) => {
-    setDeleteConfirmation({ isOpen: true, id });
-  };
-
-  const executeDeleteModule = async () => {
-    if (!deleteConfirmation.id) return;
-    const id = deleteConfirmation.id;
-
-    console.log('Executing module deletion for id:', id);
-    
-    // 1. Delete associated home_items first (FK constraint)
-    const { error: fkError } = await supabase.from('home_items').delete().eq('target_id', id).eq('type', 'module');
-    if (fkError) console.error('Error removing home shortcuts for module:', fkError);
-
-    // 2. Delete the module
-    const { error } = await supabase.from('modules').delete().eq('id', id);
-    if (error) {
-        console.error('Error deleting module:', error);
-        showAlert('Erro', 'Erro ao excluir módulo: ' + error.message, 'error');
-    } else {
-        fetchData();
-        showAlert('Sucesso', 'Módulo excluído com sucesso!', 'success');
-    }
-    setDeleteConfirmation({ isOpen: false, id: null });
-  };
-
-  const handleEditModule = (module: Module) => {
-    setEditingModule(module);
-    setModuleFormData({
-      title: module.title,
-      description: module.description,
-      icon: module.icon,
-      position: module.position,
-      image_url: module.image_url || '',
-      release_date: module.release_date || '',
-      is_locked: module.is_locked || false
-    });
-    setIsModuleModalOpen(true);
-  };
-
-  const handleAddNewModule = () => {
-    setEditingModule(null);
-    setModuleFormData({
-      title: '',
-      description: '',
-      icon: 'BookOpen',
-      position: modules.length + 1,
-      image_url: '',
-      release_date: '',
-      is_locked: false
-    });
-    setIsModuleModalOpen(true);
-  };
-
-  const handleSubmitModule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = {
-      ...moduleFormData,
-      release_date: moduleFormData.release_date === '' ? null : moduleFormData.release_date,
-      image_url: moduleFormData.image_url === '' ? null : moduleFormData.image_url,
-    };
-    if (editingModule) {
-      const { error } = await supabase.from('modules').update(payload).eq('id', editingModule.id);
-      if (error) alert('Erro ao atualizar módulo');
-    } else {
-      const { data, error } = await supabase.from('modules').insert([payload]).select(); // Select to get ID
-      if (error) {
-        alert('Erro ao criar módulo');
-        console.error(error);
-      } else if (activeHomeSectionId && data && data[0]) {
-        // If created within a specific section context, link it immediately
-        const newModuleId = data[0].id;
-        // Determine position
-        const sectionItems = homeItems.filter(i => i.section_id === activeHomeSectionId);
-        // Find the minimum position to insert at the beginning, or default to 0
-        const minPos = sectionItems.length > 0 ? Math.min(...sectionItems.map(i => i.position)) : 0;
-        const nextPos = minPos - 1;
-        
-        const { error: linkError } = await supabase.from('home_items').insert([{
-           section_id: activeHomeSectionId,
-           type: 'module',
-           target_id: newModuleId,
-           position: nextPos,
-           title: payload.title, // Copy basic info
-           description: payload.description,
-           image_url: payload.image_url
+        // Insert new
+        await supabase.from('campaign_messages').insert([{
+            campaign_id: campaignId,
+            message_content: messageForm.content,
+            trigger_type: 'date',
+            trigger_value: parsedDate.toISOString(),
+            scheduled_at: parsedDate.toISOString(),
+            status: 'pending',
+            min_delay: messageForm.min_delay,
+            max_delay: messageForm.max_delay,
+            batch_size: messageForm.batch_size,
+            batch_interval: messageForm.batch_interval,
+            target_audience: messageForm.target_audience,
+            specific_user_ids: messageForm.specific_user_ids
         }]);
-
-        if (linkError) console.error('Error linking new module to section:', linkError);
-        else {
-           // Refresh home items locally or trigger a fetch
-           // fetchData will be called below anyway
-        }
-      }
     }
-    setIsModuleModalOpen(false);
+
+    setIsCampaignModalOpen(false);
     fetchData();
   };
+
+  const toggleCampaignStatus = async (campaign: Campaign) => {
+      const newStatus = campaign.status === 'active' ? 'ended' : 'active';
+      const { error } = await supabase.from('campaigns').update({ status: newStatus }).eq('id', campaign.id);
+      if (error) alert('Erro ao atualizar status');
+      else fetchData();
+  };
+
+
+
+
 
   // --- WhatsApp Handlers ---
   const handleCheckConnection = async (silent?: boolean | any) => {
@@ -723,14 +515,14 @@ export function AdminPanel() {
     setConnectionInfo(prev => ({ ...prev, status: 'loading' }));
     
     try {
-      let result = await uazapi.createInstance("Corredentora");
+      let result = await uazapi.createInstance("EmillySousa");
       console.log('Resultado createInstance (Tentativa 1):', result);
 
       if (!result.success && (result.error?.includes('Unauthorized') || result.error?.includes('401'))) {
          const newAdminToken = prompt("O Admin Token salvo parece inválido/expirado.\n\nPor favor, insira um NOVO ADMIN TOKEN (da sua conta Uazapi/CodeChat) para criar a instância:");
          if (newAdminToken) {
             console.log('Tentando criar com Admin Token fornecido manualmente...');
-            result = await uazapi.createInstance("Corredentora", newAdminToken);
+            result = await uazapi.createInstance("EmillySousa", newAdminToken);
          }
       }
       
@@ -839,24 +631,39 @@ export function AdminPanel() {
   const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Dashboard Stats
-  const totalContribution = users.reduce((acc, user) => acc + (user.monthly_value || 0), 0);
-  const totalContributors = users.length;
+  // Dashboard Stats (Financial)
+  const totalIncome = transactions.filter(t => t.type === 'credit' && (t.status === 'completed' || t.status === 'processing')).reduce((acc, t) => acc + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'debit' && (t.status === 'completed' || t.status === 'processing')).reduce((acc, t) => acc + t.amount, 0);
+  const totalBalance = totalIncome - totalExpense;
+
+  const topExpenses = transactions
+     .filter(t => t.type === 'debit')
+     .sort((a, b) => b.amount - a.amount)
+     .slice(0, 5);
+
+  // Chart Data
+  const chartData = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    return d;
+  }).reverse().map(date => {
+     const monthName = date.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+     const monthTx = transactions.filter(t => {
+       const tDate = new Date(t.created_at);
+       return tDate.getMonth() === date.getMonth() && tDate.getFullYear() === date.getFullYear();
+     });
+     return {
+       name: monthName,
+       income: monthTx.filter(t => t.type === 'credit' && (t.status === 'completed' || t.status === 'processing')).reduce((a, t) => a + t.amount, 0),
+       expense: monthTx.filter(t => t.type === 'debit' && (t.status === 'completed' || t.status === 'processing')).reduce((a, t) => a + t.amount, 0)
+     };
+  });
 
   return (
     <Layout>
       <div className="space-y-8 pb-24 md:pb-0">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-          <div>
-            <button 
-              onClick={() => window.location.href = '/dashboard'} 
-              className="flex items-center gap-2 text-sacred-beige/60 hover:text-sacred-gold transition-colors text-sm mb-4"
-            >
-              <ChevronLeft size={16} />
-              Voltar para o Dashboard
-            </button>
-            <h2 className="font-serif text-3xl text-sacred-white mb-2">Painel Administrativo</h2>
-            <p className="text-sacred-beige/70">Gerencie o sistema.</p>
-          </div>
+          <div></div>
           
           <div className="hidden md:block w-full overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
             <div className="flex gap-6 min-w-max border-b border-sacred-gold/10 px-2">
@@ -876,22 +683,7 @@ export function AdminPanel() {
                   />
                 )}
               </button>
-              <button
-                onClick={() => setActiveTab('modules')}
-                className={`pb-3 text-sm font-medium transition-all relative ${
-                  activeTab === 'modules' 
-                    ? 'text-sacred-gold text-base' 
-                    : 'text-sacred-beige/60 hover:text-sacred-beige'
-                }`}
-              >
-                Home / Módulos
-                {activeTab === 'modules' && (
-                  <motion.div 
-                    layoutId="activeTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-sacred-gold shadow-lg shadow-sacred-gold/50" 
-                  />
-                )}
-              </button>
+
               <button
                 onClick={() => setActiveTab('users')}
                 className={`pb-3 text-sm font-medium transition-all relative ${
@@ -900,7 +692,7 @@ export function AdminPanel() {
                     : 'text-sacred-beige/60 hover:text-sacred-beige'
                 }`}
               >
-                Base de Fiéis
+                Pacientes
                 {activeTab === 'users' && (
                   <motion.div 
                     layoutId="activeTab"
@@ -980,367 +772,245 @@ export function AdminPanel() {
           <div className="text-sacred-gold text-center py-8">Carregando...</div>
         ) : (
           <>
-            {/* DASHBOARD TAB */}
+            {/* DASHBOARD TAB - FINANCIAL OVERVIEW */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
-                {/* Header & Filter */}
+                {/* Header */}
                 <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-2xl text-sacred-white">Visão Geral</h3>
-                  <Button variant="outline" className="gap-2 text-sm">
-                    <Calendar size={16} />
-                    Filtrar por data
-                  </Button>
+                  <h3 className="font-serif text-2xl text-sacred-white">Painel Financeiro</h3>
+                  <div className="text-sm text-sacred-beige/60">
+                    Visão geral de Entradas e Saídas
+                  </div>
                 </div>
 
                 {/* Top Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Contribuição */}
+                  {/* Receita Total */}
                   <div className="bg-sacred-blue/50 border border-sacred-gold/20 rounded-xl p-6 flex items-center gap-4 backdrop-blur-sm">
-                    <div className="w-12 h-12 rounded-lg bg-sacred-gold/10 flex items-center justify-center text-sacred-gold">
+                    <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400">
                       <DollarSign size={24} />
                     </div>
                     <div>
-                      <p className="text-sm text-sacred-beige/60">Contribuição</p>
+                      <p className="text-sm text-sacred-beige/60">Entradas Totais</p>
                       <p className="text-2xl font-serif text-sacred-white">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalContribution)}
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIncome)}
                       </p>
                     </div>
                   </div>
 
-                  {/* Contribuintes */}
+                  {/* Despesa Total */}
                   <div className="bg-sacred-blue/50 border border-sacred-gold/20 rounded-xl p-6 flex items-center gap-4 backdrop-blur-sm">
-                    <div className="w-12 h-12 rounded-lg bg-sacred-gold/10 flex items-center justify-center text-sacred-gold">
-                      <Users size={24} />
+                    <div className="w-12 h-12 rounded-lg bg-red-500/10 flex items-center justify-center text-red-400">
+                      <Wallet size={24} />
                     </div>
                     <div>
-                      <p className="text-sm text-sacred-beige/60">Contribuintes</p>
-                      <p className="text-2xl font-serif text-sacred-white">{totalContributors}</p>
+                      <p className="text-sm text-sacred-beige/60">Saídas Totais</p>
+                      <p className="text-2xl font-serif text-sacred-white">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalExpense)}
+                      </p>
                     </div>
                   </div>
 
-                  {/* QR Code */}
+                  {/* Saldo */}
                   <div className="bg-sacred-blue/50 border border-sacred-gold/20 rounded-xl p-6 flex items-center gap-4 backdrop-blur-sm">
-                    <div className="w-12 h-12 rounded-lg bg-sacred-gold/10 flex items-center justify-center text-sacred-gold">
-                      <QrCode size={24} />
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${totalBalance >= 0 ? 'bg-sacred-gold/10 text-sacred-gold' : 'bg-red-500/10 text-red-400'}`}>
+                      <Wallet size={24} />
                     </div>
                     <div>
-                      <p className="text-sm text-sacred-beige/60">QR Code</p>
-                      <button className="text-sm text-sacred-gold hover:underline flex items-center gap-1">
-                        Compartilhar Código <Share2 size={12} />
-                      </button>
+                      <p className="text-sm text-sacred-beige/60">Saldo Líquido</p>
+                      <p className={`text-2xl font-serif ${totalBalance >= 0 ? 'text-sacred-gold' : 'text-red-400'}`}>
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance)}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Middle Charts */}
+                {/* Main Charts Section */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Main Chart - Arrecadação por Campanha */}
+                  
+                  {/* Chart: Entradas vs Saídas */}
                   <div className="lg:col-span-2 bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm">
-                    <h4 className="text-lg font-serif text-sacred-white mb-6">Arrecadação por Campanha</h4>
-                    <div className="h-64 w-full flex items-end justify-start gap-4 px-2 overflow-x-auto">
-                      {campaigns.length === 0 ? (
-                        <div className="w-full h-full flex items-center justify-center text-sacred-beige/40">
-                          Nenhuma campanha ativa
-                        </div>
-                      ) : (
-                        campaigns.map((campaign, i) => {
-                          const maxAmount = Math.max(...campaigns.map(c => c.current_amount), 100); // Avoid div by zero
-                          const heightPercentage = Math.max((campaign.current_amount / maxAmount) * 100, 5); // Min 5% height
-                          
-                          return (
-                            <div key={campaign.id} className="w-16 min-w-[4rem] h-full flex flex-col items-center gap-2 group relative">
-                              {/* Tooltip */}
-                              <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-sacred-blue border border-sacred-gold/20 px-2 py-1 rounded text-xs text-sacred-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(campaign.current_amount)}
+                    <div className="flex justify-between items-center mb-6">
+                       <h4 className="text-lg font-serif text-sacred-white">Entradas vs Saídas (Últimos 6 Meses)</h4>
+                       <div className="flex gap-4 text-xs">
+                          <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-green-400"></div> <span>Entrada</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-red-400"></div> <span>Saída</span>
+                          </div>
+                       </div>
+                    </div>
+                    
+                    <div className="h-64 w-full flex items-end justify-between px-2 gap-2">
+                      {chartData.map((data, i) => {
+                        const maxVal = Math.max(...chartData.map(d => Math.max(d.income, d.expense)), 100);
+                        const incomeH = Math.max((data.income / maxVal) * 100, 2);
+                        const expenseH = Math.max((data.expense / maxVal) * 100, 2);
+
+                        return (
+                           <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-2 group">
+                              <div className="w-full flex justify-center items-end gap-1 h-full relative">
+                                 {/* Hover Tooltip */}
+                                 <div className="absolute -top-16 bg-sacred-blue border border-sacred-gold/20 p-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none text-xs w-max">
+                                    <div className="text-green-400 mb-1">Ent: {data.income.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                                    <div className="text-red-400">Sai: {data.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                                 </div>
+
+                                 {/* Income Bar */}
+                                 <motion.div 
+                                    initial={{ height: 0 }}
+                                    animate={{ height: `${incomeH}%` }}
+                                    className="w-1/2 bg-green-500/50 hover:bg-green-500/70 rounded-t-sm transition-colors"
+                                 />
+                                 {/* Expense Bar */}
+                                 <motion.div 
+                                    initial={{ height: 0 }}
+                                    animate={{ height: `${expenseH}%` }}
+                                    className="w-1/2 bg-red-500/50 hover:bg-red-500/70 rounded-t-sm transition-colors"
+                                 />
                               </div>
-                              
-                              <div className="w-full bg-sacred-gold/10 rounded-t-sm relative flex-1 flex items-end">
-                                <motion.div 
-                                  initial={{ height: 0 }}
-                                  animate={{ height: `${heightPercentage}%` }}
-                                  transition={{ duration: 1, delay: i * 0.1 }}
-                                  className="w-full bg-gradient-to-t from-sacred-gold/20 to-sacred-gold/60 rounded-t-sm relative"
-                                >
-                                </motion.div>
-                              </div>
-                              <div className="text-[10px] text-sacred-beige/40 text-center truncate w-full" title={campaign.title}>
-                                {campaign.title.split(' ')[0]}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
+                              <span className="text-[10px] text-sacred-beige/50 font-medium">{data.name}</span>
+                           </div>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Side Chart - Doação por Campanha */}
-                  <div className="bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm">
-                    <h4 className="text-lg font-serif text-sacred-white mb-6">Doação por Campanha</h4>
-                    <div className="space-y-4">
-                      {campaigns.length === 0 ? (
-                        <div className="text-sacred-beige/40 text-sm text-center py-4">
-                          Nenhuma campanha ativa
-                        </div>
-                      ) : (
-                        campaigns
-                          .sort((a, b) => b.current_amount - a.current_amount)
-                          .slice(0, 5)
-                          .map((campaign, i) => {
-                            const maxVal = Math.max(...campaigns.map(c => c.current_amount), 100);
-                            const widthPercentage = (campaign.current_amount / maxVal) * 100;
-                            const colors = ['bg-orange-300', 'bg-green-300', 'bg-blue-300', 'bg-red-300', 'bg-yellow-300'];
-                            const color = colors[i % colors.length];
-
-                            return (
-                              <div key={campaign.id} className="flex items-center gap-2 text-sm">
-                                <span className="w-24 text-sacred-beige/70 truncate" title={campaign.title}>
-                                  {campaign.title}
-                                </span>
-                                <div className="flex-1 h-2 bg-sacred-white/5 rounded-full overflow-hidden">
-                                  <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${widthPercentage}%` }}
-                                    className={`h-full ${color} opacity-80`}
-                                  />
+                  {/* Top Spending */}
+                  <div className="bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm flex flex-col">
+                    <h4 className="text-lg font-serif text-sacred-white mb-6">Principais Gastos</h4>
+                    <div className="flex-1 overflow-auto space-y-3 custom-scrollbar pr-2">
+                       {topExpenses.length === 0 ? (
+                          <p className="text-center text-sacred-beige/40 text-sm mt-10">Nenhuma despesa registrada.</p>
+                       ) : (
+                          topExpenses.map((expense, i) => (
+                             <div key={i} className="flex items-center justify-between p-3 bg-sacred-blue/40 rounded-lg border border-sacred-gold/5 hover:border-sacred-gold/20 transition-colors">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                   <div className="w-8 h-8 rounded-full bg-red-500/20 text-red-300 flex items-center justify-center shrink-0 font-bold text-xs">
+                                      {i + 1}
+                                   </div>
+                                   <div className="min-w-0">
+                                      <p className="text-sm text-sacred-white truncate">{expense.description}</p>
+                                      <p className="text-xs text-sacred-beige/40">{new Date(expense.created_at).toLocaleDateString()}</p>
+                                   </div>
                                 </div>
-                                <span className="w-20 text-right text-sacred-beige/90">
-                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(campaign.current_amount)}
+                                <span className="text-sm font-medium text-red-400 shrink-0">
+                                   - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(expense.amount)}
                                 </span>
-                              </div>
-                            );
-                          })
-                      )}
+                             </div>
+                          ))
+                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Charts */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Contribuição por faixa de valor */}
-                  <div className="bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm">
-                    <h4 className="text-lg font-serif text-sacred-white mb-6">Contribuição por faixa de valor</h4>
-                    <div className="h-48 flex items-end justify-around gap-4">
-                      {[
-                        { label: '1 a 25', val: 12071, h: 60 },
-                        { label: '25 a 50', val: 14420, h: 75 },
-                        { label: '50 a 100', val: 10520, h: 50 },
-                        { label: '100 +', val: 15601, h: 85 },
-                      ].map((item, i) => (
-                        <div key={i} className="flex flex-col items-center gap-2 w-full">
-                          <span className="text-xs text-sacred-beige/60">R$ {item.val.toLocaleString()}</span>
-                          <motion.div 
-                            initial={{ height: 0 }}
-                            animate={{ height: `${item.h}%` }}
-                            className="w-16 bg-sacred-gold/40 rounded-t-md"
-                          />
-                          <span className="text-xs text-sacred-beige/40">{item.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* Contribuição por idade */}
-                  <div className="bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm">
-                    <h4 className="text-lg font-serif text-sacred-white mb-6">Contribuição por idade</h4>
-                    <div className="space-y-3">
-                      {[
-                        { label: '81 anos +', m: 40, f: 30 },
-                        { label: '70 a 80', m: 60, f: 50 },
-                        { label: '51 a 61', m: 55, f: 45 },
-                        { label: '31 a 50', m: 70, f: 60 },
-                        { label: '21 a 30', m: 65, f: 55 },
-                        { label: '15 a 20', m: 30, f: 40 },
-                      ].map((item, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <div className="flex-1 flex justify-end">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${item.f}%` }}
-                              className="h-2 bg-orange-300/70 rounded-l-full"
-                            />
-                          </div>
-                          <span className="w-16 text-center text-sacred-beige/50">{item.label}</span>
-                          <div className="flex-1 flex justify-start">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${item.m}%` }}
-                              className="h-2 bg-blue-400/70 rounded-r-full"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex justify-center gap-6 mt-6 text-xs text-sacred-beige/60">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-orange-300/70" /> Feminino
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-blue-400/70" /> Masculino
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Quote */}
-                <div className="text-center py-8 text-sacred-beige/40 text-sm italic font-serif">
-                  "Cria em mim, ó Deus, um coração puro, e renova em mim um espírito reto." Salmos 51:10 🙏
-                </div>
               </div>
             )}
 
-            {/* MODULES / HOME EDITOR TAB */}
-            {activeTab === 'modules' && (
-              activeModule ? (
-                <AdminModuleContent 
-                   module={activeModule} 
-                   onBack={() => setActiveModule(null)} 
-                />
-              ) : (
-                <div className="space-y-4">
 
-                  <AdminHomeEditor 
-                    modules={modules}
-                    onManageModules={(sectionId) => {
-                       setActiveHomeSectionId(sectionId || null);
-                       setIsModuleListOpen(true);
-                    }}
-                    onEditModuleContent={(moduleId) => {
-                      const m = modules.find(mod => mod.id === moduleId);
-                      if (m) setActiveModule(m);
-                    }}
-                  />
-                  
-                  {/* Hidden DND Context to prevent errors if hooks are still running or if we want to restore legacy list below */}
-                  {/* Keeping legacy list hidden for safe keeping or just removing it entirely. Removing it is cleaner. */}
-                </div>
-              )
-            )}
 
-            {/* CAMPAIGNS TAB */}
+            {/* CAMPAIGNS TAB - WHATSAPP BLASTS */}
             {activeTab === 'campaigns' && (
               <div className="space-y-8">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <h3 className="font-serif text-2xl text-sacred-white">Campanhas</h3>
+                  <div>
+                    <h3 className="font-serif text-2xl text-sacred-white">Disparos WhatsApp</h3>
+                    <p className="text-sacred-beige/60 text-sm">Gerencie suas campanhas de mensagens em massa.</p>
+                  </div>
                   <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
                     <Button variant="outline" onClick={handleOpenMonitor} className="gap-2 justify-center w-full sm:w-auto">
                        <RefreshCw size={16} />
-                       Monitorar Disparos
+                       Monitorar Envios
                     </Button>
                     <Button onClick={handleAddNewCampaign} className="gap-2 justify-center w-full sm:w-auto">
                       <Plus size={20} />
-                      Nova campanha
+                      Novo Disparo
                     </Button>
                   </div>
                 </div>
 
-                {/* Active Campaigns */}
-                <div className="space-y-4">
-                  <h4 className="font-serif text-lg text-sacred-white">Ativas</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {campaigns.filter(c => c.status === 'active').map(campaign => (
-                      <div key={campaign.id} className="bg-sacred-blue/40 border border-sacred-gold/20 rounded-xl p-6 backdrop-blur-sm">
-                        <div className="flex justify-between items-start mb-4">
-                          <h5 className="font-serif text-lg text-sacred-white font-medium">{campaign.title}</h5>
-                          <div className="flex gap-1">
-                            <button 
-                              onClick={() => handleEditCampaign(campaign)}
-                              className="text-sacred-gold hover:text-sacred-white transition-colors p-1"
-                              title="Editar campanha"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteCampaign(campaign.id)}
-                              className="text-red-400 hover:text-red-300 transition-colors p-1"
-                              title="Excluir campanha"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
+                {/* Campaigns List */}
+                <div className="grid grid-cols-1 gap-4">
+                    {campaigns.length === 0 ? (
+                        <div className="text-center py-10 text-sacred-beige/40 bg-sacred-blue/20 rounded-xl border border-sacred-gold/10">
+                            Nenhum disparo criado.
                         </div>
-                        
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="text-sacred-white font-medium">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(campaign.current_amount)}
-                          </span>
-                          <span className="text-sacred-beige/70">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(campaign.goal_amount)}
-                          </span>
-                        </div>
+                    ) : (
+                        campaigns.map(campaign => {
+                            const message = campaign.campaign_messages?.[0];
+                            const isPaused = campaign.status !== 'active';
+                            const isSent = message?.status === 'sent';
+                            
+                            return (
+                                <div key={campaign.id} className={`bg-sacred-blue/40 border ${isPaused ? 'border-sacred-gold/10' : 'border-sacred-gold/30'} rounded-xl p-6 backdrop-blur-sm transition-all hover:bg-sacred-blue/50`}>
+                                    <div className="flex flex-col md:flex-row justify-between gap-6">
+                                        <div className="flex-1 space-y-2">
+                                            <div className="flex items-center gap-3">
+                                                <h4 className={`font-serif text-xl ${isPaused ? 'text-sacred-white/60' : 'text-sacred-white'}`}>{campaign.title}</h4>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wider ${
+                                                    isSent ? 'bg-green-500/20 border-green-500/30 text-green-400' :
+                                                    isPaused ? 'bg-yellow-500/20 border-yellow-500/30 text-yellow-400' :
+                                                    'bg-blue-500/20 border-blue-500/30 text-blue-400'
+                                                }`}>
+                                                    {isSent ? 'Enviado' : isPaused ? 'Pausado' : 'Agendado'}
+                                                </span>
+                                            </div>
+                                            
+                                            {message && (
+                                                <div className="bg-sacred-blue/40 p-3 rounded-lg border border-sacred-white/5 text-sm text-sacred-beige/80 italic">
+                                                    "{message.message_content}"
+                                                </div>
+                                            )}
 
-                        <div className="h-2 bg-sacred-gold/10 rounded-full overflow-hidden mb-6">
-                          <div 
-                            className="h-full bg-sacred-gold rounded-full"
-                            style={{ width: `${Math.min((campaign.current_amount / campaign.goal_amount) * 100, 100)}%` }}
-                          />
-                        </div>
+                                            <div className="flex items-center gap-4 text-xs text-sacred-beige/50">
+                                                <div className="flex items-center gap-1">
+                                                    <Calendar size={12} />
+                                                    {message?.scheduled_at ? new Date(message.scheduled_at).toLocaleString('pt-BR') : 'Sem data'}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Users size={12} />
+                                                    Todos os Pacientes
+                                                </div>
+                                            </div>
+                                        </div>
 
-                        <Button 
-                          variant="outline" 
-                          className="w-full gap-2 text-sm"
-                          onClick={() => handleOpenBroadcast(campaign)}
-                        >
-                          <Send size={14} />
-                          Enviar mensagem (WhatsApp)
-                        </Button>
+                                        <div className="flex items-center gap-2 self-start md:self-center">
+                                            {!isSent && (
+                                                <Button 
+                                                    variant="outline" 
+                                                    onClick={() => toggleCampaignStatus(campaign)}
+                                                    className={`w-10 h-10 p-0 rounded-full ${isPaused ? 'hover:bg-green-500/20 hover:text-green-400' : 'hover:bg-yellow-500/20 hover:text-yellow-400'}`}
+                                                    title={isPaused ? "Retomar" : "Pausar"}
+                                                >
+                                                    {isPaused ? <Play size={18} /> : <PauseCircle size={18} />}
+                                                </Button>
+                                            )}
+                                            
+                                            <Button 
+                                                variant="outline" 
+                                                onClick={() => handleEditCampaign(campaign)}
+                                                className="w-10 h-10 p-0 rounded-full hover:bg-sacred-gold/10 hover:text-sacred-gold"
+                                                title="Editar"
+                                            >
+                                                <Edit2 size={16} />
+                                            </Button>
 
-                        <Button 
-                          variant="outline"
-                          className="w-full gap-2 text-sm mt-2"
-                          onClick={() => handleOpenMessageModal(campaign)}
-                        >
-                          <Clock size={14} />
-                          Programar Mensagens
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Ended Campaigns */}
-                <div className="space-y-4">
-                  <h4 className="font-serif text-lg text-sacred-white/60">Encerradas</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {campaigns.filter(c => c.status === 'ended').map(campaign => (
-                      <div key={campaign.id} className="bg-sacred-blue/20 border border-sacred-gold/10 rounded-xl p-6 opacity-70">
-                        <div className="flex justify-between items-start mb-4">
-                          <h5 className="font-serif text-lg text-sacred-beige/60">{campaign.title}</h5>
-                          <div className="flex gap-1">
-                            <button 
-                              onClick={() => handleEditCampaign(campaign)}
-                              className="text-sacred-gold hover:text-sacred-white transition-colors p-1"
-                              title="Editar campanha"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteCampaign(campaign.id)}
-                              className="text-red-400 hover:text-red-300 transition-colors p-1"
-                              title="Excluir campanha"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="text-sacred-beige/50">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(campaign.current_amount)}
-                          </span>
-                          <span className="text-sacred-beige/40 text-xs uppercase tracking-wider mt-0.5">
-                            Encerrada
-                          </span>
-                        </div>
-
-                        <div className="h-2 bg-sacred-white/5 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-sacred-beige/20 rounded-full"
-                            style={{ width: `${Math.min((campaign.current_amount / campaign.goal_amount) * 100, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                                            <Button 
+                                                variant="outline" 
+                                                onClick={() => handleDeleteCampaign(campaign.id)}
+                                                className="w-10 h-10 p-0 rounded-full hover:bg-red-500/20 hover:text-red-400 border-red-500/20"
+                                                title="Excluir"
+                                            >
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
               </div>
             )}
@@ -1599,13 +1269,13 @@ export function AdminPanel() {
               <AdminDesignSettings />
             )}
 
-            {/* USERS TAB (Base de Fiéis) */}
+            {/* USERS TAB (Pacientes) */}.
             {activeTab === 'users' && (
               <div className="bg-sacred-blue/30 border border-sacred-gold/20 rounded-xl overflow-hidden backdrop-blur-sm">
                 {/* Header Actions */}
                 {/* Header Actions */}
                 <div className="p-4 md:p-6 border-b border-sacred-gold/10 flex flex-col gap-4">
-                  <h3 className="font-serif text-2xl text-sacred-white">Base de fiéis</h3>
+                  <h3 className="font-serif text-2xl text-sacred-white">Pacientes</h3>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <Button variant="outline" className="gap-2 justify-center w-full sm:w-auto">
                       <Upload size={16} />
@@ -1613,7 +1283,7 @@ export function AdminPanel() {
                     </Button>
                     <Button onClick={handleAddNewUser} className="gap-2 justify-center w-full sm:w-auto">
                       <Plus size={16} />
-                      Novo Fiel
+                      Novo Paciente
                     </Button>
                   </div>
                 </div>
@@ -1754,100 +1424,7 @@ export function AdminPanel() {
         )}
 
         {/* Module Modal */}
-        <AnimatePresence>
-          {isModuleModalOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-lg shadow-2xl"
-              >
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-serif text-2xl text-sacred-white">
-                    {editingModule ? 'Editar Módulo' : 'Novo Módulo'}
-                  </h3>
-                  <button onClick={() => setIsModuleModalOpen(false)} className="text-sacred-beige/50 hover:text-sacred-white">
-                    <X size={24} />
-                  </button>
-                </div>
 
-                <form onSubmit={handleSubmitModule} className="space-y-4">
-                  <Input 
-                    label="Título"
-                    value={moduleFormData.title}
-                    onChange={e => setModuleFormData({...moduleFormData, title: e.target.value})}
-                    required
-                  />
-                  
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-sacred-beige/80 ml-1">Descrição</label>
-                    <textarea 
-                      className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white placeholder:text-sacred-gray/30 focus:outline-none focus:border-sacred-gold focus:ring-1 focus:ring-sacred-gold/50 transition-all duration-300 backdrop-blur-sm min-h-[80px]"
-                      value={moduleFormData.description}
-                      onChange={e => setModuleFormData({...moduleFormData, description: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-sacred-beige/80 ml-1">Capa do Card (URL)</label>
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                         <Input 
-                          value={moduleFormData.image_url}
-                          onChange={e => setModuleFormData({...moduleFormData, image_url: e.target.value})}
-                          placeholder="https://..."
-                        />
-                      </div>
-                      {moduleFormData.image_url && (
-                        <div className="w-16 h-24 shrink-0 rounded bg-sacred-blue/80 overflow-hidden border border-sacred-gold/10">
-                          <img src={moduleFormData.image_url} alt="Preview" className="w-full h-full object-cover" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input 
-                      label="Data de Liberação"
-                      type="datetime-local"
-                      value={moduleFormData.release_date || ''}
-                      onChange={e => setModuleFormData({...moduleFormData, release_date: e.target.value})}
-                    />
-
-                    <div className="flex flex-col gap-1.5 justify-end">
-                      <label className="flex items-center gap-2 cursor-pointer p-3 bg-sacred-blue/30 rounded-md border border-sacred-gold/10 hover:bg-sacred-blue/50 transition-colors">
-                        <input 
-                          type="checkbox" 
-                          checked={moduleFormData.is_locked}
-                          onChange={e => setModuleFormData({...moduleFormData, is_locked: e.target.checked})}
-                          className="w-4 h-4 text-sacred-gold rounded border-sacred-gold/30 focus:ring-sacred-gold"
-                        />
-                        <span className="text-sacred-white text-sm">Forçar Bloqueio (Locked)</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Hidden fields / Additional Options */}
-                  <div className="hidden">
-                      {/* Icon selector kept hidden or removed if moving entirely to images, 
-                          but keeping in state for compat. User didn't ask to remove it explicitly but it's less relevant. */}
-                  </div>
-
-                  <div className="flex justify-end gap-3 mt-6">
-                    <Button type="button" variant="outline" onClick={() => setIsModuleModalOpen(false)}>
-                      Cancelar
-                    </Button>
-                    <Button type="submit">
-                      <Save size={18} />
-                      Salvar
-                    </Button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         {/* User Modal */}
         <AnimatePresence>
@@ -1861,7 +1438,7 @@ export function AdminPanel() {
               >
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="font-serif text-2xl text-sacred-white">
-                    Editar Fiel
+                    Editar Paciente
                   </h3>
                   <button onClick={() => setIsUserModalOpen(false)} className="text-sacred-beige/50 hover:text-sacred-white">
                     <X size={24} />
@@ -1950,55 +1527,158 @@ export function AdminPanel() {
           )}
         </AnimatePresence>
         {/* Campaign Modal */}
+        {/* Campaign Modal (New Blast) */}
         <AnimatePresence>
           {isCampaignModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <motion.div 
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-lg shadow-2xl"
+                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl w-full max-w-lg shadow-2xl p-6 overflow-y-auto max-h-[90vh]"
               >
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-serif text-2xl text-sacred-white">
-                    {editingCampaign ? 'Editar Campanha' : 'Nova Campanha'}
+                  <h3 className="text-xl font-serif text-sacred-white">
+                    {editingCampaign ? 'Editar Disparo' : 'Novo Disparo'}
                   </h3>
-                  <button onClick={() => setIsCampaignModalOpen(false)} className="text-sacred-beige/50 hover:text-sacred-white">
+                  <button onClick={() => setIsCampaignModalOpen(false)} className="text-sacred-beige/60 hover:text-sacred-gold">
                     <X size={24} />
                   </button>
                 </div>
 
                 <form onSubmit={handleSubmitCampaign} className="space-y-4">
-                  <Input 
-                    label="Título da Campanha"
+                  <Input
+                    label="Nome da Campanha"
                     value={campaignFormData.title}
-                    onChange={e => setCampaignFormData({...campaignFormData, title: e.target.value})}
-                    required
-                  />
-                  
-                  <Input 
-                    label="Meta de Arrecadação (R$)"
-                    type="number"
-                    value={campaignFormData.goal_amount}
-                    onChange={e => setCampaignFormData({...campaignFormData, goal_amount: parseFloat(e.target.value)})}
+                    onChange={e => setCampaignFormData(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Ex: Feliz Natal 2024"
                     required
                   />
 
-                  <Input 
-                    label="Valor Arrecadado (R$)"
-                    type="number"
-                    value={campaignFormData.current_amount}
-                    onChange={e => setCampaignFormData({...campaignFormData, current_amount: parseFloat(e.target.value)})}
+                  <div className="space-y-1">
+                     <label className="text-sm font-medium text-sacred-beige/80">Mensagem</label>
+                     <textarea
+                        className="w-full h-32 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md p-3 text-sacred-white focus:outline-none focus:border-sacred-gold/50 resize-none font-sans"
+                        placeholder="Digite a mensagem que será enviada..."
+                        value={messageForm.content}
+                        onChange={e => setMessageForm(prev => ({ ...prev, content: e.target.value }))}
+                        required
+                     />
+                  </div>
+
+                  <Input
+                    type="text"
+                    label="Data e Hora do Disparo"
+                    placeholder="dd/mm/yyyy hh:mm"
+                    value={messageForm.scheduled_at}
+                    onChange={e => {
+                      let v = e.target.value.replace(/\D/g, '');
+                      if (v.length > 12) v = v.slice(0, 12);
+                      
+                      let formatted = v;
+                      if (v.length > 2) formatted = `${v.slice(0, 2)}/${v.slice(2)}`;
+                      if (v.length > 4) formatted = `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}`;
+                      if (v.length > 8) formatted = `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4, 8)} ${v.slice(8)}`;
+                      if (v.length > 10) formatted = `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4, 8)} ${v.slice(8, 10)}:${v.slice(10)}`;
+
+                      setMessageForm(prev => ({ ...prev, scheduled_at: formatted }));
+                    }}
                     required
                   />
 
-                  <div className="flex justify-end gap-3 mt-6">
-                    <Button type="button" variant="outline" onClick={() => setIsCampaignModalOpen(false)}>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-sacred-beige/80">Público Alvo</label>
+                    <select
+                      className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white focus:outline-none focus:border-sacred-gold"
+                      value={messageForm.target_audience}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setMessageForm(prev => ({ ...prev, target_audience: val as any, specific_user_ids: [] }));
+                      }}
+                    >
+                      <option value="all">Todos os Pacientes</option>
+                      <option value="payment_status_ok">Apenas Em Dia</option>
+                      <option value="payment_status_late">Apenas Em Atraso</option>
+                      <option value="specific">Selecionar Manualmente</option>
+                    </select>
+                  </div>
+
+                  {messageForm.target_audience === 'specific' && (
+                    <div className="bg-sacred-blue/30 p-4 rounded-lg border border-sacred-gold/10 max-h-48 overflow-y-auto">
+                      <h4 className="text-sm font-medium text-sacred-gold mb-2">Selecione os Pacientes:</h4>
+                      <div className="space-y-2">
+                        {users.map(user => (
+                          <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={messageForm.specific_user_ids?.includes(user.id)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setMessageForm(prev => {
+                                  const currentIds = prev.specific_user_ids || [];
+                                  if (checked) {
+                                    return { ...prev, specific_user_ids: [...currentIds, user.id] };
+                                  } else {
+                                    return { ...prev, specific_user_ids: currentIds.filter(id => id !== user.id) };
+                                  }
+                                });
+                              }}
+                              className="rounded border-sacred-gold/30 bg-black/20 text-sacred-gold focus:ring-sacred-gold"
+                            />
+                            <span className="text-sm text-sacred-white">{user.full_name || 'Sem Nome'}</span>
+                            <span className="text-xs text-sacred-beige/40 ml-auto">{user.payment_status}</span>
+                          </label>
+                        ))}
+                        {users.length === 0 && <p className="text-xs text-sacred-beige/40">Nenhum usuário cadastrado.</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Advanced Settings Toggle or Block */}
+                  <div className="bg-sacred-blue/30 p-4 rounded-lg border border-sacred-gold/10">
+                     <h4 className="text-sm font-medium text-sacred-gold mb-2 flex items-center gap-2">
+                        <Settings2 size={14} /> Configurações Avançadas (Opcional)
+                     </h4>
+                     <div className="grid grid-cols-2 gap-4">
+                        <Input
+                           type="number"
+                           label="Delay Min (s)"
+                           value={messageForm.min_delay}
+                           onChange={e => setMessageForm(prev => ({ ...prev, min_delay: Number(e.target.value) }))}
+                        />
+                        <Input
+                           type="number"
+                           label="Delay Max (s)"
+                           value={messageForm.max_delay}
+                           onChange={e => setMessageForm(prev => ({ ...prev, max_delay: Number(e.target.value) }))}
+                        />
+                     </div>
+                     <div className="grid grid-cols-2 gap-4 mt-4">
+                        <Input
+                           type="number"
+                           label="Lote (Qtd)"
+                           value={messageForm.batch_size}
+                           onChange={e => setMessageForm(prev => ({ ...prev, batch_size: Number(e.target.value) }))}
+                        />
+                        <Input
+                           type="number"
+                           label="Intervalo Lote (s)"
+                           value={messageForm.batch_interval}
+                           onChange={e => setMessageForm(prev => ({ ...prev, batch_interval: Number(e.target.value) }))}
+                        />
+                     </div>
+                     <p className="text-[10px] text-sacred-beige/40 mt-2">
+                        Padrão: Delay 30-120s. Lote 10 msgs a cada 300s (5min).
+                     </p>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4">
+                    <Button type="button" variant="ghost" onClick={() => setIsCampaignModalOpen(false)}>
                       Cancelar
                     </Button>
                     <Button type="submit">
-                      <Save size={18} />
-                      Salvar
+                      <Save size={18} className="mr-2" />
+                      {editingCampaign ? 'Salvar Alterações' : 'Agendar Disparo'}
                     </Button>
                   </div>
                 </form>
@@ -2046,255 +1726,10 @@ export function AdminPanel() {
         </AnimatePresence>
 
         {/* Broadcast Modal */}
-        <AnimatePresence>
-          {broadcastModal.isOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-lg shadow-2xl"
-              >
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-serif text-2xl text-sacred-white flex items-center gap-2">
-                    <Send size={24} className="text-sacred-gold" />
-                    Enviar WhatsApp
-                  </h3>
-                  {!broadcastModal.isSending && (
-                    <button onClick={() => setBroadcastModal(prev => ({ ...prev, isOpen: false }))} className="text-sacred-beige/50 hover:text-sacred-white">
-                      <X size={24} />
-                    </button>
-                  )}
-                </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-sacred-beige/70 mb-2">Campanha Selecionada:</p>
-                    <p className="text-lg text-sacred-white font-serif">{broadcastModal.campaign?.title}</p>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-sacred-beige/80 ml-1">Mensagem</label>
-                    <textarea 
-                      className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white placeholder:text-sacred-gray/30 focus:outline-none focus:border-sacred-gold focus:ring-1 focus:ring-sacred-gold/50 transition-all duration-300 backdrop-blur-sm min-h-[120px]"
-                      value={broadcastModal.message}
-                      onChange={e => setBroadcastModal({...broadcastModal, message: e.target.value})}
-                      disabled={broadcastModal.isSending}
-                    />
-                    <p className="text-xs text-sacred-beige/40 text-right">
-                      Será enviado para {users.filter(u => u.phone && u.phone.length > 8).length} fiéis
-                    </p>
-                  </div>
-
-                  {broadcastModal.isSending && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs text-sacred-beige/70">
-                        <span>Enviando...</span>
-                        <span>{Math.round((broadcastModal.progress / broadcastModal.total) * 100)}%</span>
-                      </div>
-                      <div className="h-2 bg-sacred-blue/50 rounded-full overflow-hidden border border-sacred-gold/10">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(broadcastModal.progress / broadcastModal.total) * 100}%` }}
-                          className="h-full bg-sacred-gold"
-                        />
-                      </div>
-                      <p className="text-center text-xs text-sacred-beige/50">
-                        {broadcastModal.progress} de {broadcastModal.total} enviados
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex justify-end gap-3 mt-6">
-                    {!broadcastModal.isSending && (
-                      <Button type="button" variant="outline" onClick={() => setBroadcastModal(prev => ({ ...prev, isOpen: false }))}>
-                        Cancelar
-                      </Button>
-                    )}
-                    <Button 
-                      onClick={handleSendBroadcast}
-                      disabled={broadcastModal.isSending || !broadcastModal.message}
-                    >
-                      {broadcastModal.isSending ? 'Enviando...' : 'Enviar Mensagem'}
-                    </Button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         {/* Scheduled Messages Modal */}
-        <AnimatePresence>
-          {messageModal.isOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]"
-              >
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-serif text-2xl text-sacred-white flex items-center gap-2">
-                    <Clock size={24} className="text-sacred-gold" />
-                    Programar Mensagens
-                  </h3>
-                  <button onClick={() => setMessageModal(prev => ({ ...prev, isOpen: false }))} className="text-sacred-beige/50 hover:text-sacred-white">
-                    <X size={24} />
-                  </button>
-                </div>
 
-                <div className="mb-6 bg-sacred-blue/50 p-4 rounded-lg border border-sacred-gold/10">
-                  <h4 className="text-sm font-bold text-sacred-gold uppercase mb-4">Nova Regra de Envio</h4>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-sm font-medium text-sacred-beige/80 ml-1">Tipo de Gatilho</label>
-                        <select 
-                          className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white focus:outline-none focus:border-sacred-gold"
-                          value={messageForm.trigger_type}
-                          onChange={e => setMessageForm(prev => ({ ...prev, trigger_type: e.target.value as any }))}
-                        >
-                          <option value="date">Data Específica</option>
-                          <option value="amount_reached">Valor Atingido ( &gt;= )</option>
-                          <option value="amount_remaining">Valor Restante ( &lt;= )</option>
-                        </select>
-                      </div>
-
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-sm font-medium text-sacred-beige/80 ml-1">
-                          {messageForm.trigger_type === 'date' ? 'Data e Hora' : 'Valor (R$)'}
-                        </label>
-                        {messageForm.trigger_type === 'date' ? (
-                          <input 
-                            type="datetime-local"
-                            className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white focus:outline-none focus:border-sacred-gold [color-scheme:dark]"
-                            value={messageForm.scheduled_at}
-                            onChange={e => setMessageForm(prev => ({ ...prev, scheduled_at: e.target.value }))}
-                          />
-                        ) : (
-                          <input 
-                            type="number"
-                            placeholder="0.00"
-                            className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white focus:outline-none focus:border-sacred-gold"
-                            value={messageForm.trigger_value}
-                            onChange={e => setMessageForm(prev => ({ ...prev, trigger_value: e.target.value }))}
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="bg-sacred-blue/30 p-3 rounded-lg border border-sacred-gold/5">
-                      <p className="text-xs font-bold text-sacred-gold uppercase mb-2">Configuração de Envio</p>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-sacred-beige/60">Intervalo Aleatório (Min - Máx segundos)</label>
-                          <div className="flex items-center gap-2">
-                             <input 
-                              type="number" 
-                              className="w-full px-2 py-1 bg-sacred-blue/50 border border-sacred-gold/10 rounded text-sacred-white text-sm"
-                              value={messageForm.min_delay}
-                              onChange={e => setMessageForm(prev => ({ ...prev, min_delay: parseInt(e.target.value) || 0 }))}
-                             />
-                             <span className="text-sacred-beige/40">-</span>
-                             <input 
-                              type="number" 
-                              className="w-full px-2 py-1 bg-sacred-blue/50 border border-sacred-gold/10 rounded text-sacred-white text-sm"
-                              value={messageForm.max_delay}
-                              onChange={e => setMessageForm(prev => ({ ...prev, max_delay: parseInt(e.target.value) || 0 }))}
-                             />
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                           <label className="text-[10px] text-sacred-beige/60">Descanso (Lote / Tempo em seg)</label>
-                           <div className="flex items-center gap-2">
-                             <input 
-                              type="number" 
-                              placeholder="Qtd"
-                              className="w-full px-2 py-1 bg-sacred-blue/50 border border-sacred-gold/10 rounded text-sacred-white text-sm"
-                              value={messageForm.batch_size}
-                              onChange={e => setMessageForm(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 0 }))}
-                             />
-                             <span className="text-sacred-beige/40">/</span>
-                             <input 
-                              type="number" 
-                              placeholder="Seg"
-                              className="w-full px-2 py-1 bg-sacred-blue/50 border border-sacred-gold/10 rounded text-sacred-white text-sm"
-                              value={messageForm.batch_interval}
-                              onChange={e => setMessageForm(prev => ({ ...prev, batch_interval: parseInt(e.target.value) || 0 }))}
-                             />
-                           </div>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-sacred-beige/40">
-                         {messageForm.batch_size > 0 
-                           ? `Enviar para ${messageForm.batch_size} pessoas, parar por ${messageForm.batch_interval}s, depois continuar.`
-                           : 'Envio contínuo com atraso aleatório entre cada mensagem.'}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-sacred-beige/80 ml-1">Mensagem</label>
-                      <textarea 
-                        className="w-full px-4 py-3 bg-sacred-blue/50 border border-sacred-gold/20 rounded-md text-sacred-white focus:outline-none focus:border-sacred-gold min-h-[80px]"
-                        value={messageForm.content}
-                        onChange={e => setMessageForm(prev => ({ ...prev, content: e.target.value }))}
-                        placeholder="Digite a mensagem..."
-                      />
-                    </div>
-
-                    <div className="flex justify-end">
-                      <Button onClick={handleSaveMessage}>
-                        <Plus size={16} className="mr-2" />
-                        Adicionar Agendamento
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-bold text-sacred-white uppercase mb-4">Agendamentos Existentes</h4>
-                  {messageModal.loading ? (
-                    <p className="text-sacred-gold text-center">Carregando...</p>
-                  ) : messageModal.messages.length === 0 ? (
-                    <p className="text-sacred-beige/40 text-center py-4">Nenhuma mensagem programada.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {messageModal.messages.map(msg => (
-                        <div key={msg.id} className="bg-sacred-blue/40 border border-sacred-gold/10 p-4 rounded-lg flex justify-between items-center gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
-                                msg.status === 'sent' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'
-                              }`}>
-                                {msg.status === 'sent' ? 'Enviado' : 'Pendente'}
-                              </span>
-                              <span className="text-xs text-sacred-gold font-medium">
-                                {msg.trigger_type === 'date' ? '📅 Data' : msg.trigger_type === 'amount_reached' ? '💰 Valor Atingido' : '📉 Falta Atingir'}
-                              </span>
-                              <span className="text-xs text-sacred-white">
-                                {msg.trigger_type === 'date' 
-                                  ? new Date(msg.scheduled_at!).toLocaleString('pt-BR') 
-                                  : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(msg.trigger_value))}
-                              </span>
-                            </div>
-                            <p className="text-sm text-sacred-beige/80 line-clamp-2">{msg.message_content}</p>
-                          </div>
-                          <button 
-                            onClick={() => handleDeleteMessage(msg.id)}
-                            className="text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
         {/* Monitor Modal */}
         <AnimatePresence>
           {monitorModal && (
@@ -2412,166 +1847,12 @@ export function AdminPanel() {
           )}
         </AnimatePresence>
 
-        {/* Custom Alert Modal */}
-        <AnimatePresence>
-          {alertModal.isOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-sacred-blue border border-sacred-gold/40 rounded-xl p-6 w-full max-w-sm shadow-2xl relative"
-              >
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border-2 ${
-                  alertModal.type === 'error' ? 'bg-red-500/20 border-red-500/50 text-red-400' :
-                  alertModal.type === 'success' ? 'bg-green-500/20 border-green-500/50 text-green-400' :
-                  'bg-blue-500/20 border-blue-500/50 text-blue-400'
-                }`}>
-                  {alertModal.type === 'error' ? <AlertCircle size={32} /> : 
-                   alertModal.type === 'success' ? <RefreshCw size={32} /> : <AlertCircle size={32} />} 
-                </div>
-                
-                <h3 className="text-xl font-serif text-sacred-white text-center mb-2">
-                  {alertModal.title}
-                </h3>
-                
-                <p className="text-center text-sacred-beige/80 mb-6">
-                  {alertModal.message}
-                </p>
-                
-                <Button 
-                  onClick={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
-                  className="w-full bg-sacred-gold text-sacred-blue hover:bg-sacred-gold/90 font-bold"
-                >
-                  Entendi
-                </Button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+
 
         {/* Delete Confirmation Modal */}
-        <AnimatePresence>
-          {deleteConfirmation.isOpen && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-               <motion.div
-                 initial={{ opacity: 0, scale: 0.95 }}
-                 animate={{ opacity: 1, scale: 1 }}
-                 exit={{ opacity: 0, scale: 0.95 }}
-                 className="bg-sacred-blue border border-sacred-gold/40 rounded-xl p-6 w-full max-w-sm shadow-2xl"
-               >
-                 <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4 border-2 border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
-                    <Trash2 size={32} className="text-red-400" />
-                 </div>
-                 
-                 <h3 className="text-xl font-serif text-sacred-white text-center mb-2">
-                   Excluir Módulo?
-                 </h3>
-                 
-                 <p className="text-center text-sacred-beige/80 mb-6">
-                   Você tem certeza que deseja excluir este módulo permanentemente? Isso removerá o módulo e seus atalhos da tela inicial.
-                 </p>
-                 
-                 <div className="flex gap-3">
-                   <button 
-                     onClick={() => setDeleteConfirmation({ isOpen: false, id: null })}
-                     className="flex-1 py-2.5 rounded-lg border border-sacred-gold/30 text-sacred-beige hover:bg-sacred-gold/10 transition-colors"
-                   >
-                     Cancelar
-                   </button>
-                   <button 
-                     onClick={executeDeleteModule}
-                     className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg transition-colors"
-                   >
-                     Excluir
-                   </button>
-                 </div>
-               </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+
       </div>
-      {/* MODULE LIST MODAL */}
-      <AnimatePresence>
-        {isModuleListOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-sacred-blue border border-sacred-gold/30 rounded-xl p-6 w-full max-w-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-serif text-sacred-white">
-                  {activeHomeSectionId ? 'Gerenciar Módulos da Seção' : 'Gerenciar Todos os Módulos'}
-                </h3>
-                <div className="flex gap-2">
-                   <Button onClick={handleAddNewModule} className="gap-2 text-xs h-8">
-                     <Plus size={14} />
-                     Novo Módulo
-                   </Button>
-                   <button onClick={() => setIsModuleListOpen(false)} className="text-sacred-beige/50 hover:text-sacred-gold">
-                     <X size={20} />
-                   </button>
-                </div>
-              </div>
 
-              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                  <DndContext 
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-
-                    <SortableContext 
-                      items={(activeHomeSectionId 
-                        ? homeItems
-                            .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
-                            .sort((a,b) => a.position - b.position)
-                            .map(hi => hi.target_id!)
-                        : modules.map(m => m.id)
-                      )}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="grid gap-3">
-                        {(activeHomeSectionId 
-                            ? homeItems
-                                .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
-                                .sort((a,b) => a.position - b.position)
-                                .map(hi => modules.find(m => m.id === hi.target_id)).filter(Boolean) as Module[]
-                            : modules
-                        ).length === 0 ? (
-                            <p className="text-sacred-beige/50 text-center py-4">
-                                {activeHomeSectionId ? 'Nenhum módulo nesta seção.' : 'Nenhum módulo cadastrado'}
-                            </p>
-                        ) : (
-                            (activeHomeSectionId 
-                                ? homeItems
-                                    .filter(hi => hi.section_id === activeHomeSectionId && hi.target_id)
-                                    .sort((a,b) => a.position - b.position)
-                                    .map(hi => modules.find(m => m.id === hi.target_id)).filter(Boolean) as Module[]
-                                : modules
-                            ).map((module) => (
-                              <SortableModuleItem 
-                                key={module.id} 
-                                module={module} 
-                                onEdit={handleEditModule}
-                                onDelete={confirmDeleteModule}
-                                onManageContent={(m) => {
-                                    setIsModuleListOpen(false);
-                                    setActiveModule(m);
-                                }}
-                              />
-                            ))
-                        )}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
         {/* Mobile Bottom Navigation */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-sacred-blue/95 backdrop-blur-xl border-t border-sacred-gold/20 z-50 pb-safe">
@@ -2583,19 +1864,13 @@ export function AdminPanel() {
                     <LayoutDashboard size={20} strokeWidth={activeTab === 'dashboard' ? 2.5 : 2} />
                     <span className="text-[10px] font-medium">Início</span>
                 </button>
-                <button 
-                  onClick={() => setActiveTab('modules')}
-                  className={`flex flex-col items-center gap-1 ${activeTab === 'modules' ? 'text-sacred-gold' : 'text-sacred-beige/50'}`}
-                >
-                    <BookOpen size={20} strokeWidth={activeTab === 'modules' ? 2.5 : 2} />
-                    <span className="text-[10px] font-medium">Módulos</span>
-                </button>
+
                 <button 
                   onClick={() => setActiveTab('users')}
                   className={`flex flex-col items-center gap-1 ${activeTab === 'users' ? 'text-sacred-gold' : 'text-sacred-beige/50'}`}
                 >
                     <Users size={20} strokeWidth={activeTab === 'users' ? 2.5 : 2} />
-                    <span className="text-[10px] font-medium">Fiéis</span>
+                    <span className="text-[10px] font-medium">Pacientes</span>
                 </button>
                 <button 
                   onClick={() => setActiveTab('campaigns')}

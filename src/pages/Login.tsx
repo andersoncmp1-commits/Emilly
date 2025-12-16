@@ -48,13 +48,7 @@ export function Login() {
 
       <div className="w-full max-w-md bg-sacred-blue/80 backdrop-blur-lg border border-sacred-gold/30 rounded-xl p-8 shadow-2xl shadow-black/50 relative z-10">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-            <img 
-              src="https://i.imgur.com/3vqvsBH.png" 
-              alt="Logo" 
-              className="w-full h-full object-contain"
-            />
-          </div>
+
           <h2 className="font-serif text-3xl text-sacred-white mb-2">Bem-vindo</h2>
           <p className="text-sacred-beige/80 text-sm">Acesse sua área de membros</p>
         </div>

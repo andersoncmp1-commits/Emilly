@@ -7,7 +7,7 @@ import { MagicLinkLogin } from './pages/MagicLinkLogin';
 import { Register } from './pages/Register';
 import { Recovery } from './pages/Recovery';
 import { ResetPassword } from './pages/ResetPassword';
-import { Dashboard } from './pages/Dashboard';
+// import { Dashboard } from './pages/Dashboard';
 import { AdminPanel } from './pages/AdminPanel';
 import { Settings } from './pages/Settings';
 import { AnimatePresence } from 'framer-motion';
@@ -20,6 +20,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <div className="min-h-screen flex items-center justify-center bg-sacred-blue text-sacred-gold">Carregando...</div>;
   }
 
+  // Com o mock, a logica de auth é bypassada, mas mantemos o check só por segurança da estrutura
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
@@ -55,18 +56,14 @@ function AnimatedRoutes() {
         <Route 
           path="/dashboard" 
           element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/admin" 
-          element={
             <AdminRoute>
               <AdminPanel />
             </AdminRoute>
           } 
+        />
+        <Route 
+          path="/admin" 
+          element={<Navigate to="/dashboard" replace />} 
         />
         <Route 
           path="/settings" 

@@ -10,12 +10,11 @@ interface LayoutProps {
 
 // Layout principal com Header e Background - Cores dinâmicas
 export function Layout({ children }: LayoutProps) {
-  const { user, isAdmin, profile } = useAuth();
+  const { user, profile } = useAuth();
   const { settings, isDarkMode, toggleTheme } = useSettings();
 
-  // Logo dinâmica (do settings ou fallback)
-  const logoUrl = settings?.logo_url || 'https://i.imgur.com/3vqvsBH.png';
-  const projectName = settings?.project_name || 'Apostolado Imaculada Corredentora';
+
+  const projectName = settings?.project_name || 'Emilly Sousa';
   
   // Gerar SVG pattern dinamicamente com a cor gold do tema
   const patternSvg = useMemo(() => {
@@ -51,12 +50,6 @@ export function Layout({ children }: LayoutProps) {
       <header className="relative z-10 bg-sacred-blue/90 backdrop-blur-md border-b border-sacred-gold/30 h-20">
         <div className="container mx-auto px-6 h-full flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-4 hover:opacity-90 transition-opacity">
-            {/* Logo Dinâmica */}
-            <img 
-              src={logoUrl} 
-              alt={projectName} 
-              className="h-16 w-auto object-contain"
-            />
             <div>
               <h1 className="font-serif text-xl text-sacred-white tracking-wide">
                 {projectName.split(' ')[0] || 'Apostolado'}
@@ -96,11 +89,7 @@ export function Layout({ children }: LayoutProps) {
               </Link>
             </div>
 
-            {isAdmin && (
-              <Link to="/admin" className="text-sacred-gold/70 hover:text-sacred-gold transition-colors text-sm font-semibold">
-                ADMIN
-              </Link>
-            )}
+
           </div>
         </div>
       </header>
